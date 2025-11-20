@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchBooks } from '../services/books';
 import type { Book } from '../types/book';
-import { Card, List, Tag } from 'antd';
+import { Card, List, Tag, Button, Space } from 'antd';
 
 const conditionColor: Record<string, string> = {
   excellent: 'green',
@@ -16,24 +16,43 @@ export default function Books() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const run = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchBooks();
-        setBooks(data);
-      } catch (e: any) {
-        setError(e?.message ?? '加载失败');
-      } finally {
-        setLoading(false);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchBooks();
+      setBooks(data);
+    } catch (e: unknown) {
+      let msg = '加载失败';
+      if (e && typeof e === 'object') {
+        if ('message' in e && typeof (e as { message?: unknown }).message === 'string') {
+          msg = (e as { message: string }).message;
+        }
       }
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(load, 15000); // 15s 轮询一次
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
     };
-    run();
   }, []);
 
   return (
     <div>
-      <Card title="书籍列表" bordered={false} style={{ background: '#fff' }}>
+      <Card title={
+        <Space>
+          <span>书籍列表</span>
+          <Button size="small" onClick={load} loading={loading}>刷新</Button>
+        </Space>
+      } bordered={false} style={{ background: '#fff' }}>
         {error && <p style={{ color: 'red' }}>{error}</p>}
         <List
           grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4, xl: 5 }}
@@ -43,14 +62,19 @@ export default function Books() {
             const cond = b.condition || b.condition_level;
             return (
               <List.Item>
-                <Card hoverable size="small">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <Link to={`/books/${b.id}`} style={{ fontWeight: 600 }}>{b.title}</Link>
-                    <div style={{ fontSize: 12, color: '#555' }}>作者：{b.author}</div>
-                    <div style={{ fontSize: 12 }}>价格：￥{b.price ?? b.selling_price ?? b.original_price}</div>
-                    {cond && <Tag color={conditionColor[cond] || 'default'} style={{ width: 'fit-content' }}>{cond}</Tag>}
-                  </div>
-                </Card>
+                <Link to={`/books/${b.id}`} style={{ display: 'block' }}>
+                  <Card hoverable size="small">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontWeight: 600 }}>{b.title}</div>
+                      <div style={{ fontSize: 12, color: '#555' }}>作者：{b.author}</div>
+                      <div style={{ fontSize: 12 }}>价格：¥{b.price ?? b.selling_price ?? b.original_price}</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {cond && <Tag color={conditionColor[cond] || 'default'} style={{ width: 'fit-content' }}>{cond}</Tag>}
+                        {b.status && <Tag>{b.status}</Tag>}
+                      </div>
+                    </div>
+                  </Card>
+                </Link>
               </List.Item>
             );
           }}

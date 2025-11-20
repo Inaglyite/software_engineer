@@ -18,9 +18,10 @@ export async function fetchBooks(q?: string) {
     const params = q ? { q } : undefined;
     const { data } = await api.get<Book[]>('/books', { params });
     return data.map(adapt);
-  } catch (err) {
-    // Fallback to mock data during early dev if backend not up
-    if (import.meta.env.DEV) {
+  } catch (err: any) {
+    // Only fallback on network errors (backend not reachable), not on 4xx/5xx
+    const isNetwork = !err?.response && !!err?.request;
+    if (import.meta.env.DEV && isNetwork) {
       const query = (q ?? '').toLowerCase();
       return MOCK_BOOKS.filter(
         (b) =>
@@ -38,8 +39,9 @@ export async function fetchBook(bookId: string) {
   try {
     const { data } = await api.get<Book>(`/books/${bookId}`);
     return adapt(data);
-  } catch (err) {
-    if (import.meta.env.DEV) {
+  } catch (err: any) {
+    const isNetwork = !err?.response && !!err?.request;
+    if (import.meta.env.DEV && isNetwork) {
       const found = MOCK_BOOKS.find((b) => b.id === bookId);
       if (found) return adapt(found);
     }

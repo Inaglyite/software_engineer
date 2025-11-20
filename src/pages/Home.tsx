@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchBooks } from '../services/books';
 import type { Book } from '../types/book';
 import { Card, Input, Button, Row, Col } from 'antd';
+import { Link } from 'react-router-dom';
 
 export default function Home() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -15,8 +16,9 @@ export default function Home() {
     try {
       const data = await fetchBooks(q);
       setBooks(data.slice(0, 8)); // 只展示前8本作为“最新”
-    } catch (e: any) {
-      setError(e?.message ?? 'Load failed');
+    } catch (e: unknown) {
+      const msg = typeof e === 'object' && e && 'message' in e ? String((e as any).message) : 'Load failed';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -39,6 +41,7 @@ export default function Home() {
             style={{ flex: '1 1 240px', minWidth: 240 }}
           />
           <Button type="primary" onClick={load} loading={loading}>搜索</Button>
+          <Link to="/books"><Button>更多书籍</Button></Link>
         </div>
         {error && <p style={{ color: 'red' }}>{error}</p>}
       </Card>
@@ -46,11 +49,13 @@ export default function Home() {
         <Row gutter={[16, 16]}>
           {books.map(b => (
             <Col key={b.id} xs={12} sm={8} md={6} lg={6} xl={4}>
-              <Card size="small" hoverable>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{b.title}</div>
-                <div style={{ fontSize: 12, color: '#555' }}>{b.author}</div>
-                <div style={{ fontSize: 12 }}>￥{b.price ?? b.selling_price ?? b.original_price}</div>
-              </Card>
+              <Link to={`/books/${b.id}`} style={{ color: 'inherit' }}>
+                <Card size="small" hoverable>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{b.title}</div>
+                  <div style={{ fontSize: 12, color: '#555' }}>{b.author}</div>
+                  <div style={{ fontSize: 12 }}>¥{b.price ?? b.selling_price ?? b.original_price}</div>
+                </Card>
+              </Link>
             </Col>
           ))}
         </Row>

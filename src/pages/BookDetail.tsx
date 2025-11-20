@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchBook } from '../services/books';
 import type { Book } from '../types/book';
-import { Card, Descriptions, Tag, Spin, Alert } from 'antd';
+import { Card, Descriptions, Tag, Spin, Alert, Button } from 'antd';
 
 const conditionColor: Record<string, string> = {
   excellent: 'green',
@@ -13,6 +13,7 @@ const conditionColor: Record<string, string> = {
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
+  const navigate = useNavigate();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,13 +21,20 @@ export default function BookDetail() {
   useEffect(() => {
     const run = async () => {
       if (!bookId) return;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       setLoading(true);
       setError(null);
       try {
         const data = await fetchBook(bookId);
         setBook(data);
-      } catch (e: any) {
-        setError(e?.response?.data?.detail ?? e?.message ?? '加载失败');
+      } catch (e: unknown) {
+        let msg = '加载失败';
+        if (e && typeof e === 'object') {
+          if ('message' in e && typeof (e as { message?: unknown }).message === 'string') {
+            msg = (e as { message: string }).message;
+          }
+        }
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -41,12 +49,12 @@ export default function BookDetail() {
   const cond = book.condition || book.condition_level;
 
   return (
-    <Card title={book.title} extra={<Link to="/books">返回列表</Link>}>
+    <Card title={book.title} extra={<Button type="link" onClick={() => navigate(-1)}>/ 返回列表</Button>}>
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label="作者">{book.author}</Descriptions.Item>
         <Descriptions.Item label="ISBN">{book.isbn}</Descriptions.Item>
-        <Descriptions.Item label="售价">￥{book.price ?? book.selling_price ?? book.original_price}</Descriptions.Item>
-        <Descriptions.Item label="原价">￥{book.original_price ?? book.originalPrice}</Descriptions.Item>
+        <Descriptions.Item label="售价">¥{book.price ?? book.selling_price ?? book.original_price}</Descriptions.Item>
+        <Descriptions.Item label="原价">¥{book.original_price ?? book.originalPrice}</Descriptions.Item>
         <Descriptions.Item label="品相">
           {cond && <Tag color={conditionColor[cond] || 'default'}>{cond}</Tag>}
         </Descriptions.Item>
@@ -54,6 +62,9 @@ export default function BookDetail() {
         <Descriptions.Item label="状态">{book.status}</Descriptions.Item>
         <Descriptions.Item label="卖家ID">{book.seller_id ?? book.sellerId}</Descriptions.Item>
       </Descriptions>
+      <div style={{ marginTop: 12 }}>
+        <Link to="/books">返回到书籍列表页</Link>
+      </div>
     </Card>
   );
 }
