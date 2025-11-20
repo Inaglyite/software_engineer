@@ -8,6 +8,8 @@ import Books from './pages/Books'
 import NotFound from './pages/NotFound'
 import BookDetail from './pages/BookDetail'
 import Publish from './pages/Publish'
+import Login from './pages/Login'
+import DeliveryTasks from './pages/DeliveryTasks'
 
 const router = createBrowserRouter([
   {
@@ -18,6 +20,8 @@ const router = createBrowserRouter([
       { path: 'books', element: <Books /> },
       { path: 'books/:bookId', element: <BookDetail /> },
       { path: 'publish', element: <Publish /> },
+      { path: 'login', element: <Login /> },
+      { path: 'delivery', element: <DeliveryTasks /> },
       { path: '*', element: <NotFound /> },
     ],
   },

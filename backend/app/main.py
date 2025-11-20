@@ -9,9 +9,12 @@ from sqlalchemy.orm import Session
 from .models.book import Book, ConditionLevel, BookStatus
 from .models.user import User
 from .models.order import Order, OrderStatus, DeliveryMethod, PaymentMethod, PaymentStatus
+from .models.delivery_task import DeliveryTask, DeliveryTaskStatus
 from sqlalchemy import text
 import os
 from pathlib import Path
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import hashlib, uuid, datetime, secrets
 
 app = FastAPI(title="DHU Secondhand Books API", version="0.2.1")
 
@@ -130,6 +133,20 @@ class UserUpdate(BaseModel):
     name: str | None = None
     phone: str | None = None
     is_active: bool | None = None
+
+class LoginPayload(BaseModel):
+    student_id: str
+    password: str
+
+class AuthToken(BaseModel):
+    access_token: str
+    user_id: str
+    student_id: str
+    name: str
+
+# Simple in-memory token store for MVP
+TOKEN_STORE: dict[str, dict] = {}
+security = HTTPBearer()
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(['html','xml']))
@@ -605,3 +622,112 @@ def admin_order_delete(order_id: str, db: Session = Depends(get_db)):
         book.status = BookStatus.available
     db.delete(o); db.commit()
     return HTMLResponse('<meta http-equiv="refresh" content="0; url=/admin/orders" />订单已删除')
+
+@app.post('/api/login', response_model=AuthToken)
+def login(payload: LoginPayload, db: Session = Depends(get_db)):
+    u = db.query(User).filter(User.student_id == payload.student_id).first()
+    if not u:
+        raise HTTPException(status_code=400, detail='student_id or password error')
+    expected = hashlib.sha256(payload.password.encode()).hexdigest()
+    if u.hashed_password != expected:
+        raise HTTPException(status_code=400, detail='student_id or password error')
+    token = secrets.token_hex(32)
+    TOKEN_STORE[token] = {'user_id': u.id, 'ts': datetime.datetime.utcnow().isoformat()}
+    return AuthToken(access_token=token, user_id=u.id, student_id=u.student_id, name=u.name)
+
+def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+    token = creds.credentials
+    data = TOKEN_STORE.get(token)
+    if not data:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    u = db.query(User).filter(User.id == data['user_id']).first()
+    if not u:
+        raise HTTPException(status_code=401, detail="User not found")
+    return u
+
+@app.post('/api/books/{book_id}/purchase', response_model=OrderOut)
+def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod.meetup, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail='Book not found')
+    if book.status != BookStatus.available:
+        raise HTTPException(status_code=400, detail='Book not available')
+    seller = db.query(User).filter(User.id == book.seller_id).first()
+    if not seller:
+        raise HTTPException(status_code=400, detail='Seller missing')
+    order_number = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S') + uuid.uuid4().hex[:6]
+    delivery_fee = 0 if delivery_method == DeliveryMethod.meetup else 5
+    total_amount = float(book.selling_price) + delivery_fee
+    order = Order(
+        id=str(uuid.uuid4()),
+        order_number=order_number,
+        book_id=book.id,
+        buyer_id=current_user.id,
+        seller_id=seller.id,
+        book_price=book.selling_price,
+        delivery_fee=delivery_fee,
+        total_amount=total_amount,
+        status=OrderStatus.pending,
+        delivery_method=delivery_method,
+        payment_status=PaymentStatus.pending
+    )
+    book.status = BookStatus.reserved
+    db.add(order)
+    db.commit(); db.refresh(order); db.refresh(book)
+    return order
+
+class DeliveryTaskOut(BaseModel):
+    id: str
+    order_id: str
+    courier_id: str | None
+    pickup_location: str
+    delivery_location: str
+    delivery_fee: float
+    status: DeliveryTaskStatus
+    created_at: str | None = None
+    updated_at: str | None = None
+    class Config:
+        from_attributes = True
+
+class DeliveryTaskCreate(BaseModel):
+    order_id: str
+    pickup_location: str
+    delivery_location: str
+    delivery_fee: float = 0
+
+@app.post('/api/delivery_tasks', response_model=DeliveryTaskOut)
+def create_delivery_task(payload: DeliveryTaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == payload.order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if order.status not in [OrderStatus.pending, OrderStatus.confirmed]:
+        raise HTTPException(status_code=400, detail='Order not eligible for delivery task')
+    task = DeliveryTask(
+        id=str(uuid.uuid4()),
+        order_id=order.id,
+        pickup_location=payload.pickup_location,
+        delivery_location=payload.delivery_location,
+        delivery_fee=payload.delivery_fee,
+        status=DeliveryTaskStatus.pending
+    )
+    db.add(task); db.commit(); db.refresh(task)
+    return task
+
+@app.get('/api/delivery_tasks', response_model=List[DeliveryTaskOut])
+def list_delivery_tasks(status: DeliveryTaskStatus | None = None, db: Session = Depends(get_db)):
+    q = db.query(DeliveryTask)
+    if status:
+        q = q.filter(DeliveryTask.status == status)
+    return q.order_by(DeliveryTask.created_at.desc()).limit(200).all()
+
+@app.post('/api/delivery_tasks/{task_id}/accept', response_model=DeliveryTaskOut)
+def accept_delivery_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(DeliveryTask).filter(DeliveryTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    if task.status != DeliveryTaskStatus.pending:
+        raise HTTPException(status_code=400, detail='Task already accepted')
+    task.status = DeliveryTaskStatus.accepted
+    task.courier_id = current_user.id
+    db.commit(); db.refresh(task)
+    return task

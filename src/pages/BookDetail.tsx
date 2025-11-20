@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchBook } from '../services/books';
 import type { Book } from '../types/book';
-import { Card, Descriptions, Tag, Spin, Alert, Button } from 'antd';
+import { Card, Descriptions, Tag, Spin, Alert, Button, message } from 'antd';
+import api from '../services/api';
 
 const conditionColor: Record<string, string> = {
   excellent: 'green',
@@ -42,6 +43,24 @@ export default function BookDetail() {
     run();
   }, [bookId]);
 
+  const handlePurchase = async () => {
+    if (!book) return;
+    try {
+      const res = await api.post(`/books/${book.id}/purchase`);
+      message.success('下单成功');
+      // Refresh book data
+      const updated = await fetchBook(book.id);
+      setBook(updated);
+    } catch (e: unknown) {
+      let msg = '购买失败';
+      if (e && typeof e === 'object' && 'response' in e) {
+        const detail = (e as any).response?.data?.detail;
+        if (detail) msg = detail;
+      }
+      message.error(msg);
+    }
+  };
+
   if (loading) return <Spin />;
   if (error) return <Alert type="error" message={error} />;
   if (!book) return <Alert type="warning" message="未找到该书籍" />;
@@ -50,6 +69,9 @@ export default function BookDetail() {
 
   return (
     <Card title={book.title} extra={<Button type="link" onClick={() => navigate(-1)}>/ 返回列表</Button>}>
+      <Button type="primary" disabled={book.status !== 'available'} onClick={handlePurchase} style={{ marginBottom: 12 }}>
+        {book.status === 'available' ? '购买' : '不可购买'}
+      </Button>
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label="作者">{book.author}</Descriptions.Item>
         <Descriptions.Item label="ISBN">{book.isbn}</Descriptions.Item>
