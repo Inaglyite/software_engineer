@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ title or '后台管理' }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin:0; background:#f5f7fa; }
+    header { background:#222; color:#fff; padding:12px 24px; }
+    nav a { color:#fff; margin-right:16px; text-decoration:none; }
+    nav a.active { font-weight:bold; }
+    .container { max-width:1080px; margin:24px auto; background:#fff; padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,.06); }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    th, td { padding:8px 10px; border:1px solid #ddd; font-size:14px; }
+    th { background:#fafafa; text-align:left; }
+    form.inline { display:inline-block; margin:0; }
+    .status-label { padding:3px 8px; border-radius:4px; font-size:12px; background:#eee; }
+    .status-available { background:#d1fae5; }
+    .status-reserved { background:#fde68a; }
+    .status-sold { background:#fca5a5; }
+    .status-off_shelf { background:#e5e7eb; }
+    footer { text-align:center; padding:24px 0; color:#666; font-size:12px; }
+    .actions button { margin-right:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/admin" class="{% if active == 'books' %}active{% endif %}">书籍管理</a>
+      <a href="/admin/users" class="{% if active == 'users' %}active{% endif %}">用户管理</a>
+      <a href="/admin/orders" class="{% if active == 'orders' %}active{% endif %}">订单管理</a>
+    </nav>
+  </header>
+  <div class="container">
+    <h1>{{ page_title }}</h1>
+    {% block content %}{% endblock %}
+  </div>
+  <footer>DHU Secondhand © {{ year }}</footer>
+</body>
+</html>
+

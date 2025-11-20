@@ -7,3 +7,4 @@ alembic==1.13.2
 python-multipart==0.0.9
 passlib==1.7.4
 python-jose==3.3.0
+Jinja2==3.1.4

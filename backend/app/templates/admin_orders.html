@@ -1,0 +1,45 @@
+{% extends 'admin_base.html' %}
+{% block content %}
+<form method="post" action="/admin/orders/create">
+  <h3>创建订单</h3>
+  <div>
+    <input name="book_id" placeholder="书籍ID" required />
+    <input name="buyer_id" placeholder="买家用户ID" required />
+    <select name="delivery_method" required>
+      <option value="meetup">meetup</option>
+      <option value="delivery">delivery</option>
+    </select>
+    <button type="submit">创建订单</button>
+  </div>
+</form>
+<hr />
+<table>
+  <thead>
+    <tr>
+      <th>订单号</th><th>书籍ID</th><th>买家ID</th><th>卖家ID</th><th>金额</th><th>状态</th><th>配送</th><th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in orders %}
+    <tr>
+      <td>{{ o.order_number }}</td>
+      <td>{{ o.book_id }}</td>
+      <td>{{ o.buyer_id }}</td>
+      <td>{{ o.seller_id }}</td>
+      <td>{{ o.total_amount }}</td>
+      <td>{{ o.status }}</td>
+      <td>{{ o.delivery_method }}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/pending"><button {% if o.status=='pending' %}disabled{% endif %}>待处理</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/confirmed"><button {% if o.status=='confirmed' %}disabled{% endif %}>确认</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/paid"><button {% if o.status=='paid' %}disabled{% endif %}>已支付</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/shipping"><button {% if o.status=='shipping' %}disabled{% endif %}>配送中</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/completed"><button {% if o.status=='completed' %}disabled{% endif %}>完成</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/status/cancelled"><button {% if o.status=='cancelled' %}disabled{% endif %}>取消</button></form>
+        <form class="inline" method="post" action="/admin/orders/{{ o.id }}/delete" onsubmit="return confirm('确认删除?');"><button>删除</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

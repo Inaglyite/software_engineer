@@ -79,12 +79,18 @@ ensure_venv(){
   fi
   # shellcheck source=/dev/null
   source "$VENV_DIR/bin/activate"
+  local need_install=0
   if [ ! -f "$VENV_DIR/installed.flag" ]; then
-    info "安装后端依赖..."
+    need_install=1
+  else
+    python -c 'import jinja2' 2>/dev/null || need_install=1
+  fi
+  if [ "$need_install" -eq 1 ]; then
+    info "安装/更新后端依赖..."
     pip install --upgrade pip >/dev/null 2>&1 || true
     pip install -r "$ROOT_DIR/backend/requirements.txt" || { error "pip 安装失败"; exit 1; }
     touch "$VENV_DIR/installed.flag"
-    success "后端依赖安装完成。"
+    success "后端依赖已安装/更新。"
   fi
 }
 
@@ -100,10 +106,10 @@ port_pid(){
 check_port(){
   local p; p=$(port_pid)
   if [ -n "$p" ]; then
-    if [ -f "$BACKEND_PID_FILE" ] && [ "$(cat "$BACKEND_PID_FILE")" = "$p" ]; then
+    if [ -f "$BACKEND_PID_FILE" ] && grep -qx "$(cat "$BACKEND_PID_FILE")" <<< "$p"; then
       return 0
     fi
-    warn "端口 $UVICORN_PORT 已被进程 PID $p 占用。若需强制释放可运行: $0 kill-port"
+    warn "端口 $UVICORN_PORT 已被进程 PID(s) $p 占用。若需强制释放可运行: $0 kill-port"
     return 1
   fi
   return 0
@@ -111,8 +117,11 @@ check_port(){
 kill_port(){
   local p; p=$(port_pid)
   if [ -n "$p" ]; then
-    info "强制杀掉占用端口 $UVICORN_PORT 的进程 PID $p"
-    kill "$p" || sudo kill -9 "$p" || true
+    info "强制杀掉占用端口 $UVICORN_PORT 的进程 PID(s): $p"
+    while read -r pid; do
+      [ -z "$pid" ] && continue
+      kill "$pid" 2>/dev/null || sudo kill -9 "$pid" 2>/dev/null || true
+    done <<< "$p"
     sleep 1
   else
     warn "端口 $UVICORN_PORT 当前未被占用。"
@@ -200,7 +209,7 @@ status(){
     warn "后端未运行"
   fi
   if [ -f "$FRONTEND_PID_FILE" ] && kill -0 "$(cat "$FRONTEND_PID_FILE")" 2>/dev/null; then
-    success "前端运行中 PID $(cat "$FRONTEND_PID_FILE") (http://localhost:5173)"
+    success "前端运行中 PID $(cat "$FRONTEND_PID_FILE")" "(http://localhost:5173)"
   else
     warn "前端未运行"
   fi
@@ -232,4 +241,3 @@ case "$COMMAND" in
   *)
     error "未知命令: $COMMAND"; usage; exit 1 ;;
  esac
-

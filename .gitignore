@@ -30,6 +30,11 @@ __pycache__/
 .env
 backend/.env
 .logs/
+
+# Runtime PID markers
+backend/backend.pid
+frontend.pid
+
 # SQLite / temp DBs
 *.db
 *.sqlite
