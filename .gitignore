@@ -46,3 +46,17 @@ pytest.cache/
 .vite/
 # OS miscellaneous
 Thumbs.db
+
+# Frontend environment files
+.env.local
+.env.development
+.env.production
+.env.test
+# Seed logs
+seed.out
+# Python build artifacts
+build/
+# Pydantic cache (if any)
+.pdm.toml
+# MyPy cache
+.mypy_cache/

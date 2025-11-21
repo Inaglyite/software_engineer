@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Layout as AntLayout, Menu, Button } from 'antd';
 import type { MenuProps } from 'antd';
-import { BookOutlined, HomeOutlined, PlusCircleOutlined, LoginOutlined, CarOutlined } from '@ant-design/icons';
+import { BookOutlined, HomeOutlined, PlusCircleOutlined, LoginOutlined, CarOutlined, UserOutlined } from '@ant-design/icons';
 
 const { Header, Content, Footer } = AntLayout;
 
@@ -17,6 +17,7 @@ export default function Layout() {
     { key: 'books', icon: <BookOutlined />, label: <Link to="/books">书籍</Link> },
     { key: 'publish', icon: <PlusCircleOutlined />, label: <Link to="/publish">发布</Link> },
     { key: 'delivery', icon: <CarOutlined />, label: <Link to="/delivery">配送订单</Link> },
+    loggedIn ? { key: 'personal', icon: <UserOutlined />, label: <Link to="/personal">个人中心</Link> } : null,
     !loggedIn ? { key: 'login', icon: <LoginOutlined />, label: <Link to="/login">登录</Link> } : null,
   ].filter(Boolean);
 

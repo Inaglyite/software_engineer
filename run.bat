@@ -2,7 +2,7 @@
 SETLOCAL ENABLEDELAYEDEXPANSION
 REM =============================================
 REM DHU Secondhand Books - Windows one-click script
-REM Usage: run.bat init | start | backend | frontend | stop | status
+REM Usage: run.bat init | start | backend | frontend | stop | status | seed | logs | restart
 REM =============================================
 
 SET PROJECT_DIR=%~dp0
@@ -27,6 +27,9 @@ SET BACKEND_PID_FILE=%PROJECT_DIR%backend.pid
 SET FRONTEND_PID_FILE=%PROJECT_DIR%frontend.pid
 
 IF "%1"=="" GOTO :help
+IF "%1"=="restart" GOTO :restart
+IF "%1"=="seed" GOTO :seed
+IF "%1"=="logs" GOTO :logs
 
 :ensureVenv
 IF NOT EXIST %VENV_DIR% (
@@ -86,34 +89,46 @@ ECHO [INFO] Init done.
 GOTO :EOF
 
 :help
-ECHO Usage: run.bat init ^| start ^| backend ^| frontend ^| stop ^| status
-ECHO   init      Create venv + install deps (backend & frontend)
-ECHO   start     Start backend and frontend
-ECHO   backend   Start backend only
-ECHO   frontend  Start frontend only
-ECHO   stop      Stop (remove pid markers; close windows manually if needed)
-ECHO   status    Show running process hints
+ECHO Usage: run.bat init ^| start ^| backend ^| frontend ^| stop ^| status ^| seed ^| logs ^| restart
+ECHO   init       Create venv + install deps (backend & frontend)
+ECHO   start      Start backend and frontend
+ECHO   backend    Start backend only
+ECHO   frontend   Start frontend only
+ECHO   stop       Stop (remove pid markers; close windows manually if needed)
+ECHO   status     Show running process hints
+ECHO   seed       Run seed_data.py (ensure sample users/books)
+ECHO   logs       Print log file hints
+ECHO   restart    Restart backend (close uvicorn then start)
 GOTO :EOF
 
-:start
+:restart
+CALL :stopBackend
 CALL :startBackend
-CALL :startFrontend
-CALL :status
+GOTO :status
+
+:stopBackend
+REM Try to terminate uvicorn window by task name
+TASKLIST /FI "IMAGENAME eq uvicorn.exe" | find /I "uvicorn" >NUL && (
+  echo [INFO] Attempting to terminate uvicorn processes...
+  for /f "tokens=2" %%p in ('tasklist /FI "IMAGENAME eq uvicorn.exe" ^| find /I "uvicorn"') do taskkill /PID %%p /F >NUL 2>&1
+)
 GOTO :EOF
 
-:backend
-CALL :startBackend
-CALL :status
+:seed
+CALL :ensureVenv
+IF EXIST scripts\seed_data.py (
+  echo [INFO] Running seed_data.py ...
+  python scripts\seed_data.py > .logs\seed.out 2>&1 && echo [INFO] Seed done. Log: .logs\seed.out || echo [ERROR] Seed failed. See .logs\seed.out
+) ELSE (
+  echo [WARN] scripts\seed_data.py not found.
+)
 GOTO :EOF
 
-:frontend
-CALL :startFrontend
-CALL :status
+:logs
+ECHO === Backend log (tail not available in CMD, show first lines) ===
+IF EXIST .logs\backend.out type .logs\backend.out | more
+ECHO === Frontend log ===
+IF EXIST .logs\frontend.out type .logs\frontend.out | more
+ECHO === Seed log ===
+IF EXIST .logs\seed.out type .logs\seed.out | more
 GOTO :EOF
-
-:fail
-ECHO [ERROR] Command failed.
-EXIT /B 1
-
-ENDLOCAL
-

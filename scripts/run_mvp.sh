@@ -43,6 +43,8 @@ usage(){
   restart        重启后端(包含端口检测)
   force-backend  强制杀端口后再启动后端
   kill-port      释放被占用的后端端口
+  seed           执行种子数据脚本 (scripts/seed_data.py)
+  logs           查看最新后端/前端日志 (tail)
   help           显示此帮助
 示例:
   DB_PASS=xxx $0 start
@@ -216,6 +218,26 @@ status(){
   echo "--------------"
 }
 
+seed(){
+  ensure_venv
+  export DB_USER DB_PASS DB_HOST DB_PORT DB_NAME
+  if [ -f "$ROOT_DIR/scripts/seed_data.py" ]; then
+    info "执行种子数据脚本..."
+    (cd "$ROOT_DIR" && "$VENV_DIR/bin/python" scripts/seed_data.py > "$LOG_DIR/seed.out" 2>&1) || { error "种子数据脚本执行失败"; return 1; }
+    success "种子数据完成 (日志: $LOG_DIR/seed.out)"
+  else
+    warn "未找到 scripts/seed_data.py"
+  fi
+}
+logs(){
+  echo "==== 后端日志 (最后 40 行) ===="
+  tail -n 40 "$LOG_DIR/backend.out" 2>/dev/null || echo "无后端日志"
+  echo "==== 前端日志 (最后 40 行) ===="
+  tail -n 40 "$LOG_DIR/frontend.out" 2>/dev/null || echo "无前端日志"
+  echo "==== 种子数据日志 (最后 20 行) ===="
+  tail -n 20 "$LOG_DIR/seed.out" 2>/dev/null || echo "无种子日志"
+}
+
 COMMAND="${1:-help}"
 case "$COMMAND" in
   start)
@@ -236,6 +258,10 @@ case "$COMMAND" in
     kill_port; start_backend ;;
   kill-port)
     kill_port ;;
+  seed)
+    seed ;;
+  logs)
+    logs ;;
   help|--help|-h)
     usage ;;
   *)

@@ -134,6 +134,10 @@ class UserUpdate(BaseModel):
     phone: str | None = None
     is_active: bool | None = None
 
+class UserPasswordUpdate(BaseModel):
+    old_password: str
+    new_password: str
+
 class LoginPayload(BaseModel):
     student_id: str
     password: str
@@ -303,6 +307,8 @@ def create_order(payload: OrderCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Book not found")
     if book.status != BookStatus.available:
         raise HTTPException(status_code=400, detail="Book not available")
+    if book.seller_id == payload.buyer_id:
+        raise HTTPException(status_code=400, detail="Cannot purchase your own listing")
     buyer = db.query(User).filter(User.id == payload.buyer_id).first()
     if not buyer:
         raise HTTPException(status_code=404, detail="Buyer not found")
@@ -655,6 +661,8 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
     seller = db.query(User).filter(User.id == book.seller_id).first()
     if not seller:
         raise HTTPException(status_code=400, detail='Seller missing')
+    if book.seller_id == current_user.id:
+        raise HTTPException(status_code=400, detail='Cannot purchase your own listing')
     order_number = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S') + uuid.uuid4().hex[:6]
     delivery_fee = 0 if delivery_method == DeliveryMethod.meetup else 5
     total_amount = float(book.selling_price) + delivery_fee
@@ -731,3 +739,37 @@ def accept_delivery_task(task_id: str, db: Session = Depends(get_db), current_us
     task.courier_id = current_user.id
     db.commit(); db.refresh(task)
     return task
+
+@app.get('/api/me', response_model=UserOut)
+def api_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@app.patch('/api/me', response_model=UserOut)
+def api_me_update(payload: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(current_user, field, value)
+    db.commit(); db.refresh(current_user)
+    return current_user
+
+@app.patch('/api/me/password')
+def api_me_password(payload: UserPasswordUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    expected = hashlib.sha256(payload.old_password.encode()).hexdigest()
+    if current_user.hashed_password != expected:
+        raise HTTPException(status_code=400, detail='旧密码不正确')
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail='新密码长度至少6位')
+    current_user.hashed_password = hashlib.sha256(payload.new_password.encode()).hexdigest()
+    db.commit()
+    return {'status': 'ok'}
+
+@app.get('/api/me/books', response_model=List[BookOut])
+def api_me_books(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Book).filter(Book.seller_id == current_user.id, Book.status.in_([BookStatus.available, BookStatus.reserved])).order_by(Book.created_at.desc()).all()
+
+@app.get('/api/me/orders', response_model=List[OrderOut])
+def api_me_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Order).filter(Order.buyer_id == current_user.id).order_by(Order.created_at.desc()).all()
+
+@app.get('/api/me/sales', response_model=List[OrderOut])
+def api_me_sales(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Order).filter(Order.seller_id == current_user.id).order_by(Order.created_at.desc()).all()

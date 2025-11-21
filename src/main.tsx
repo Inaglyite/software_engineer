@@ -10,6 +10,7 @@ import BookDetail from './pages/BookDetail'
 import Publish from './pages/Publish'
 import Login from './pages/Login'
 import DeliveryTasks from './pages/DeliveryTasks'
+import PersonalCenter from './pages/PersonalCenter'
 
 const router = createBrowserRouter([
   {
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
       { path: 'publish', element: <Publish /> },
       { path: 'login', element: <Login /> },
       { path: 'delivery', element: <DeliveryTasks /> },
+      { path: 'personal', element: <PersonalCenter /> },
       { path: '*', element: <NotFound /> },
     ],
   },

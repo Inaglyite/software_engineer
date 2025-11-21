@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchBook } from '../services/books';
 import type { Book } from '../types/book';
 import { Card, Descriptions, Tag, Spin, Alert, Button, message } from 'antd';
-import api from '../services/api';
+import { createOrderFromDetail } from '../services/orders';
 
 const conditionColor: Record<string, string> = {
   excellent: 'green',
@@ -46,18 +46,13 @@ export default function BookDetail() {
   const handlePurchase = async () => {
     if (!book) return;
     try {
-      const res = await api.post(`/books/${book.id}/purchase`);
+      await createOrderFromDetail(book.id);
       message.success('下单成功');
-      // Refresh book data
       const updated = await fetchBook(book.id);
       setBook(updated);
-    } catch (e: unknown) {
-      let msg = '购买失败';
-      if (e && typeof e === 'object' && 'response' in e) {
-        const detail = (e as any).response?.data?.detail;
-        if (detail) msg = detail;
-      }
-      message.error(msg);
+    } catch (e) {
+      const detail = (e && typeof e === 'object' && 'response' in e) ? (e as any).response?.data?.detail : undefined;
+      message.error(detail || '购买失败');
     }
   };
 
