@@ -6,11 +6,11 @@ from pydantic import BaseModel
 from typing import List
 from .database import get_db, Base, engine, SessionLocal
 from sqlalchemy.orm import Session
+from sqlalchemy import text, and_
 from .models.book import Book, ConditionLevel, BookStatus
 from .models.user import User
 from .models.order import Order, OrderStatus, DeliveryMethod, PaymentMethod, PaymentStatus
 from .models.delivery_task import DeliveryTask, DeliveryTaskStatus
-from sqlalchemy import text
 import os
 from pathlib import Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -91,6 +91,8 @@ class OrderCreate(BaseModel):
     meetup_location: str | None = None
     meetup_time: str | None = None  # ISO datetime
     payment_method: PaymentMethod | None = None
+    pickup_location: str | None = None
+    delivery_location: str | None = None
 
 class OrderOut(BaseModel):
     id: str
@@ -105,12 +107,16 @@ class OrderOut(BaseModel):
     delivery_method: DeliveryMethod
     meetup_location: str | None = None
     meetup_time: str | None = None
+    pickup_location: str | None = None
+    delivery_location: str | None = None
     payment_method: PaymentMethod | None = None
     payment_status: PaymentStatus
-    created_at: str | None = None
-    updated_at: str | None = None
-    completed_at: str | None = None
-    cancelled_at: str | None = None
+    payment_due_at: datetime.datetime | None = None
+    paid_at: datetime.datetime | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
+    completed_at: datetime.datetime | None = None
+    cancelled_at: datetime.datetime | None = None
 
     class Config:
         from_attributes = True
@@ -118,6 +124,9 @@ class OrderOut(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
     payment_status: PaymentStatus | None = None
+
+class PaymentConfirmPayload(BaseModel):
+    payment_method: PaymentMethod | None = None
 
 class BookUpdate(BaseModel):
     isbn: str | None = None
@@ -154,6 +163,8 @@ security = HTTPBearer()
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(['html','xml']))
+
+PAYMENT_WINDOW_MINUTES = int(os.getenv("PAYMENT_WINDOW_MINUTES", "15"))
 
 @app.get("/")
 def root():
@@ -223,17 +234,33 @@ def seed_data():
     # Ensure missing column hashed_password exists (added after initial schema)
     try:
         with engine.connect() as conn:
+            db_name = os.getenv("DB_NAME", "dhu_secondhand_platform")
             try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR(128) NULL"))
                 conn.commit()
             except Exception:
                 # Fallback: check information_schema then add without IF NOT EXISTS if needed
-                col_exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='users' AND COLUMN_NAME='hashed_password'"), {"db": os.getenv("DB_NAME", "dhu_secondhand_platform")}).scalar()
+                col_exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='users' AND COLUMN_NAME='hashed_password'"), {"db": db_name}).scalar()
                 if col_exists == 0:
                     conn.execute(text("ALTER TABLE users ADD COLUMN hashed_password VARCHAR(128) NULL"))
                     conn.commit()
+            order_columns = [
+                ("pickup_location", "VARCHAR(200) NULL"),
+                ("delivery_location", "VARCHAR(200) NULL"),
+                ("payment_due_at", "TIMESTAMP NULL"),
+                ("paid_at", "TIMESTAMP NULL"),
+            ]
+            for column, ddl in order_columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {column} {ddl}"))
+                    conn.commit()
+                except Exception:
+                    exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='orders' AND COLUMN_NAME=:col"), {"db": db_name, "col": column}).scalar()
+                    if exists == 0:
+                        conn.execute(text(f"ALTER TABLE orders ADD COLUMN {column} {ddl}"))
+                        conn.commit()
     except Exception as e:
-        print("[WARN] Unable to ensure hashed_password column:", e)
+        print("[WARN] Unable to ensure schema columns:", e)
     db = SessionLocal()
     try:
         seller = db.query(User).filter(User.student_id == 'seed_seller').first()
@@ -326,6 +353,7 @@ def create_order(payload: OrderCreate, db: Session = Depends(get_db)):
             meetup_time_dt = datetime.datetime.fromisoformat(payload.meetup_time.replace('Z','+00:00'))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid meetup_time format")
+    payment_due_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=PAYMENT_WINDOW_MINUTES)
     new_order = Order(
         id=str(uuid.uuid4()),
         order_number=order_number,
@@ -339,8 +367,11 @@ def create_order(payload: OrderCreate, db: Session = Depends(get_db)):
         delivery_method=payload.delivery_method,
         meetup_location=payload.meetup_location,
         meetup_time=meetup_time_dt,
+        pickup_location=payload.pickup_location,
+        delivery_location=payload.delivery_location,
         payment_method=payload.payment_method,
         payment_status=PaymentStatus.pending,
+        payment_due_at=payment_due_at,
     )
     # Mark book reserved
     book.status = BookStatus.reserved
@@ -652,7 +683,7 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security), db
     return u
 
 @app.post('/api/books/{book_id}/purchase', response_model=OrderOut)
-def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod.meetup, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod.meetup, meetup_location: str | None = None, pickup_location: str | None = None, delivery_location: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     book = db.query(Book).filter(Book.id == book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail='Book not found')
@@ -666,6 +697,7 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
     order_number = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S') + uuid.uuid4().hex[:6]
     delivery_fee = 0 if delivery_method == DeliveryMethod.meetup else 5
     total_amount = float(book.selling_price) + delivery_fee
+    payment_due_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=PAYMENT_WINDOW_MINUTES)
     order = Order(
         id=str(uuid.uuid4()),
         order_number=order_number,
@@ -677,7 +709,11 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
         total_amount=total_amount,
         status=OrderStatus.pending,
         delivery_method=delivery_method,
-        payment_status=PaymentStatus.pending
+        meetup_location=meetup_location,
+        pickup_location=pickup_location,
+        delivery_location=delivery_location,
+        payment_status=PaymentStatus.pending,
+        payment_due_at=payment_due_at,
     )
     book.status = BookStatus.reserved
     db.add(order)
@@ -773,3 +809,55 @@ def api_me_orders(db: Session = Depends(get_db), current_user: User = Depends(ge
 @app.get('/api/me/sales', response_model=List[OrderOut])
 def api_me_sales(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Order).filter(Order.seller_id == current_user.id).order_by(Order.created_at.desc()).all()
+
+@app.post('/api/orders/{order_id}/pay', response_model=OrderOut)
+def pay_order(order_id: str, payload: PaymentConfirmPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == order_id, Order.buyer_id == current_user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if order.status != OrderStatus.pending or order.payment_status != PaymentStatus.pending:
+        raise HTTPException(status_code=400, detail='Order not awaiting payment')
+    if order.payment_due_at and order.payment_due_at < datetime.datetime.utcnow():
+        raise HTTPException(status_code=400, detail='Payment window expired')
+    order.payment_method = payload.payment_method
+    order.payment_status = PaymentStatus.paid
+    order.status = OrderStatus.confirmed
+    order.paid_at = datetime.datetime.utcnow()
+    db.commit(); db.refresh(order)
+    return order
+
+@app.post('/api/orders/{order_id}/cancel', response_model=OrderOut)
+def cancel_order(order_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == order_id, Order.buyer_id == current_user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if order.status in [OrderStatus.completed, OrderStatus.cancelled]:
+        raise HTTPException(status_code=400, detail='Order already finalized')
+    book = db.query(Book).filter(Book.id == order.book_id).first()
+    if book and book.status == BookStatus.reserved:
+        book.status = BookStatus.available
+    order.status = OrderStatus.cancelled
+    order.payment_status = PaymentStatus.failed
+    order.cancelled_at = datetime.datetime.utcnow()
+    db.commit(); db.refresh(order)
+    return order
+
+@app.get('/api/me/orders/pending', response_model=List[OrderOut])
+def api_me_pending_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Order).filter(and_(Order.buyer_id == current_user.id, Order.status == OrderStatus.pending, Order.payment_status == PaymentStatus.pending)).order_by(Order.created_at.desc()).all()
+
+@app.post('/api/cron/release-expired')
+def cron_release_expired(db: Session = Depends(get_db)):
+    now = datetime.datetime.utcnow()
+    expired_orders = db.query(Order).filter(and_(Order.status == OrderStatus.pending, Order.payment_status == PaymentStatus.pending, Order.payment_due_at != None, Order.payment_due_at < now)).all()
+    changed = 0
+    for order in expired_orders:
+        order.status = OrderStatus.cancelled
+        order.payment_status = PaymentStatus.failed
+        order.cancelled_at = now
+        book = db.query(Book).filter(Book.id == order.book_id).first()
+        if book and book.status == BookStatus.reserved:
+            book.status = BookStatus.available
+        changed += 1
+    db.commit()
+    return {'released': changed}

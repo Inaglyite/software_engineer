@@ -11,6 +11,7 @@ import Publish from './pages/Publish'
 import Login from './pages/Login'
 import DeliveryTasks from './pages/DeliveryTasks'
 import PersonalCenter from './pages/PersonalCenter'
+import Payment from './pages/Payment'
 
 const router = createBrowserRouter([
   {
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { path: 'login', element: <Login /> },
       { path: 'delivery', element: <DeliveryTasks /> },
       { path: 'personal', element: <PersonalCenter /> },
+      { path: 'payment/:orderId', element: <Payment /> },
       { path: '*', element: <NotFound /> },
     ],
   },

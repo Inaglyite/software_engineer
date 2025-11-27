@@ -46,10 +46,9 @@ export default function BookDetail() {
   const handlePurchase = async () => {
     if (!book) return;
     try {
-      await createOrderFromDetail(book.id);
-      message.success('下单成功');
-      const updated = await fetchBook(book.id);
-      setBook(updated);
+      const order = await createOrderFromDetail(book.id);
+      message.success('订单已创建，进入支付流程');
+      navigate(`/payment/${order.id}`);
     } catch (e) {
       const detail = (e && typeof e === 'object' && 'response' in e) ? (e as any).response?.data?.detail : undefined;
       message.error(detail || '购买失败');
