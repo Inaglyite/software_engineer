@@ -13,4 +13,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    if (error?.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user_id');
+      localStorage.removeItem('student_id');
+      localStorage.removeItem('user_name');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
 export default api;

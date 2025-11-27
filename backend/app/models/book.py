@@ -23,9 +23,11 @@ class Book(Base):
     author = Column(String(100), nullable=False)
     publisher = Column(String(100))
     publish_date = Column(DATE)
+    publish_year = Column(Integer)
     edition = Column(String(50))
     category_id = Column(Integer)
-    cover_image = Column(String(500))
+    cover_image = Column(Text)
+    gallery_images = Column(Text)
     description = Column(Text)
     original_price = Column(DECIMAL(10,2), nullable=False)
     selling_price = Column(DECIMAL(10,2), nullable=False)
@@ -40,4 +42,3 @@ class Book(Base):
     approved_at = Column(TIMESTAMP)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
-

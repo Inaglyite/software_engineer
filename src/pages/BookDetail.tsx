@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchBook } from '../services/books';
 import type { Book } from '../types/book';
 import { Card, Descriptions, Tag, Spin, Alert, Button, message } from 'antd';
-import { createOrderFromDetail } from '../services/orders';
+import { purchaseBookFromDetail } from '../services/orders';
 
 const conditionColor: Record<string, string> = {
   excellent: 'green',
@@ -46,11 +46,24 @@ export default function BookDetail() {
   const handlePurchase = async () => {
     if (!book) return;
     try {
-      const order = await createOrderFromDetail(book.id);
+      const order = await purchaseBookFromDetail(book.id);
       message.success('订单已创建，进入支付流程');
       navigate(`/payment/${order.id}`);
     } catch (e) {
-      const detail = (e && typeof e === 'object' && 'response' in e) ? (e as any).response?.data?.detail : undefined;
+      const getErrorDetail = (err: unknown): string | undefined => {
+        if (!err || typeof err !== 'object') return undefined;
+        const obj = err as Record<string, unknown>;
+        if (!('response' in obj)) return undefined;
+        const resp = obj['response'];
+        if (!resp || typeof resp !== 'object') return undefined;
+        const respObj = resp as Record<string, unknown>;
+        const data = respObj['data'];
+        if (!data || typeof data !== 'object') return undefined;
+        const dataObj = data as Record<string, unknown>;
+        const detailVal = dataObj['detail'];
+        return typeof detailVal === 'string' ? detailVal : undefined;
+      };
+      const detail = getErrorDetail(e);
       message.error(detail || '购买失败');
     }
   };
@@ -63,9 +76,25 @@ export default function BookDetail() {
 
   return (
     <Card title={book.title} extra={<Button type="link" onClick={() => navigate(-1)}>/ 返回列表</Button>}>
-      <Button type="primary" disabled={book.status !== 'available'} onClick={handlePurchase} style={{ marginBottom: 12 }}>
-        {book.status === 'available' ? '购买' : '不可购买'}
-      </Button>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 12 }}>
+        {book.cover_image ? (
+          <img src={book.cover_image} alt="cover" style={{ width: 160, height: 220, objectFit: 'cover', borderRadius: 4 }} />
+        ) : (
+          <div style={{ width: 160, height: 220, background: '#f0f0f0', borderRadius: 4 }} />
+        )}
+        <div style={{ flex: 1 }}>
+          <Button type="primary" disabled={book.status !== 'available'} onClick={handlePurchase} style={{ marginBottom: 12 }}>
+            {book.status === 'available' ? '购买' : '不可购买'}
+          </Button>
+          {book.gallery_images && book.gallery_images.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {book.gallery_images.map((g, i) => (
+                <img key={i} src={g} alt={`img-${i}`} style={{ width: 80, height: 110, objectFit: 'cover', borderRadius: 4 }} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label="作者">{book.author}</Descriptions.Item>
         <Descriptions.Item label="ISBN">{book.isbn}</Descriptions.Item>

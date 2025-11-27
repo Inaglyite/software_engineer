@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Form
+from fastapi import FastAPI, HTTPException, Depends, Request, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -14,7 +14,9 @@ from .models.delivery_task import DeliveryTask, DeliveryTaskStatus
 import os
 from pathlib import Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 import hashlib, uuid, datetime, secrets
+import json
 
 app = FastAPI(title="DHU Secondhand Books API", version="0.2.1")
 
@@ -34,10 +36,15 @@ class BookOut(BaseModel):
     isbn: str
     title: str
     author: str
+    publisher: str | None = None
+    publish_year: int | None = None
+    edition: str | None = None
     original_price: float
     selling_price: float
     condition_level: ConditionLevel
     description: str | None = None
+    cover_image: str | None = None
+    gallery_images: list[str] | None = None
     seller_id: str
     status: BookStatus
 
@@ -48,10 +55,15 @@ class BookCreate(BaseModel):
     isbn: str
     title: str
     author: str
+    publisher: str
+    publish_year: int | None = None
+    edition: str | None = None
     original_price: float
     selling_price: float
     condition_level: ConditionLevel
     description: str | None = None
+    cover_image: str
+    gallery_images: list[str]
     seller_id: str
 
 class UserCreate(BaseModel):
@@ -132,10 +144,15 @@ class BookUpdate(BaseModel):
     isbn: str | None = None
     title: str | None = None
     author: str | None = None
+    publisher: str | None = None
+    publish_year: int | None = None
+    edition: str | None = None
     original_price: float | None = None
     selling_price: float | None = None
     condition_level: ConditionLevel | None = None
     description: str | None = None
+    cover_image: str | None = None
+    gallery_images: list[str] | None = None
     status: BookStatus | None = None
 
 class UserUpdate(BaseModel):
@@ -162,7 +179,12 @@ TOKEN_STORE: dict[str, dict] = {}
 security = HTTPBearer()
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
+UPLOAD_DIR = Path(__file__).resolve().parents[1] / 'uploads'
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(['html','xml']))
+
+# Serve uploaded assets
+app.mount('/uploads', StaticFiles(directory=str(UPLOAD_DIR)), name='uploads')
 
 PAYMENT_WINDOW_MINUTES = int(os.getenv("PAYMENT_WINDOW_MINUTES", "15"))
 
@@ -198,14 +220,21 @@ def list_books(q: str | None = None, db: Session = Depends(get_db)):
     if q:
         like = f"%{q}%"
         query = query.filter((Book.title.ilike(like)) | (Book.author.ilike(like)) | (Book.isbn.ilike(like)))
-    return query.order_by(Book.created_at.desc()).limit(50).all()
+    return [
+        BookOut(
+            **{**b.__dict__, 'gallery_images': json.loads(b.gallery_images or '[]')}
+        )
+        for b in query.order_by(Book.created_at.desc()).limit(50).all()
+    ]
 
 @app.get("/api/books/{book_id}", response_model=BookOut)
 def get_book(book_id: str, db: Session = Depends(get_db)):
     b = db.query(Book).filter(Book.id == book_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Book not found")
-    return b
+    return BookOut(
+        **{**b.__dict__, 'gallery_images': json.loads(b.gallery_images or '[]')}
+    )
 
 @app.post("/api/books", response_model=BookOut)
 def create_book(payload: BookCreate, db: Session = Depends(get_db)):
@@ -218,10 +247,15 @@ def create_book(payload: BookCreate, db: Session = Depends(get_db)):
         isbn=payload.isbn,
         title=payload.title,
         author=payload.author,
+        publisher=payload.publisher,
+        publish_year=payload.publish_year,
+        edition=payload.edition,
         original_price=payload.original_price,
         selling_price=payload.selling_price,
         condition_level=payload.condition_level,
         description=payload.description,
+        cover_image=payload.cover_image,
+        gallery_images=json.dumps(payload.gallery_images),
         seller_id=payload.seller_id,
     )
     db.add(new_book)
@@ -258,6 +292,25 @@ def seed_data():
                     exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='orders' AND COLUMN_NAME=:col"), {"db": db_name, "col": column}).scalar()
                     if exists == 0:
                         conn.execute(text(f"ALTER TABLE orders ADD COLUMN {column} {ddl}"))
+                        conn.commit()
+            # Ensure books table has newer columns added after initial schema
+            book_columns = [
+                ("publish_date", "DATE NULL"),
+                ("publish_year", "INT NULL"),
+                ("edition", "VARCHAR(50) NULL"),
+                ("category_id", "INT NULL"),
+                ("cover_image", "TEXT NULL"),
+                ("gallery_images", "TEXT NULL"),
+                ("condition_description", "TEXT NULL"),
+            ]
+            for column, ddl in book_columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE books ADD COLUMN IF NOT EXISTS {column} {ddl}"))
+                    conn.commit()
+                except Exception:
+                    exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='books' AND COLUMN_NAME=:col"), {"db": db_name, "col": column}).scalar()
+                    if exists == 0:
+                        conn.execute(text(f"ALTER TABLE books ADD COLUMN {column} {ddl}"))
                         conn.commit()
     except Exception as e:
         print("[WARN] Unable to ensure schema columns:", e)
@@ -426,18 +479,6 @@ def update_order(order_id: str, payload: OrderStatusUpdate, db: Session = Depend
     db.refresh(o)
     return o
 
-@app.delete("/api/orders/{order_id}")
-def delete_order(order_id: str, db: Session = Depends(get_db)):
-    o = db.query(Order).filter(Order.id == order_id).first()
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
-    book = db.query(Book).filter(Book.id == o.book_id).first()
-    if book and book.status == BookStatus.reserved:
-        book.status = BookStatus.available
-    db.delete(o)
-    db.commit()
-    return {"deleted": True}
-
 @app.get('/admin', response_class=HTMLResponse)
 def admin_books(db: Session = Depends(get_db)):
     books = db.query(Book).order_by(Book.created_at.desc()).limit(100).all()
@@ -481,7 +522,10 @@ def api_update_book(book_id: str, payload: BookUpdate, db: Session = Depends(get
     if not b:
         raise HTTPException(status_code=404, detail='Book not found')
     for field, value in payload.dict(exclude_unset=True).items():
-        setattr(b, field, value)
+        if field == 'gallery_images' and value is not None:
+            setattr(b, field, json.dumps(value))
+        else:
+            setattr(b, field, value)
     db.commit(); db.refresh(b)
     return b
 
@@ -720,6 +764,20 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
     db.commit(); db.refresh(order); db.refresh(book)
     return order
 
+@app.delete("/api/orders/{order_id}")
+def delete_order(order_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    o = db.query(Order).filter(Order.id == order_id).first()
+    if not o:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if current_user.id not in (o.buyer_id, o.seller_id):
+        raise HTTPException(status_code=403, detail="无权删除该订单")
+    book = db.query(Book).filter(Book.id == o.book_id).first()
+    if book and book.status == BookStatus.reserved:
+        book.status = BookStatus.available
+    db.delete(o)
+    db.commit()
+    return {"deleted": True}
+
 class DeliveryTaskOut(BaseModel):
     id: str
     order_id: str
@@ -800,7 +858,13 @@ def api_me_password(payload: UserPasswordUpdate, db: Session = Depends(get_db), 
 
 @app.get('/api/me/books', response_model=List[BookOut])
 def api_me_books(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Book).filter(Book.seller_id == current_user.id, Book.status.in_([BookStatus.available, BookStatus.reserved])).order_by(Book.created_at.desc()).all()
+    books = db.query(Book).filter(Book.seller_id == current_user.id, Book.status.in_([BookStatus.available, BookStatus.reserved])).order_by(Book.created_at.desc()).all()
+    return [
+        BookOut(
+            **{**b.__dict__, 'gallery_images': json.loads(b.gallery_images or '[]')}
+        )
+        for b in books
+    ]
 
 @app.get('/api/me/orders', response_model=List[OrderOut])
 def api_me_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -809,6 +873,18 @@ def api_me_orders(db: Session = Depends(get_db), current_user: User = Depends(ge
 @app.get('/api/me/sales', response_model=List[OrderOut])
 def api_me_sales(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Order).filter(Order.seller_id == current_user.id).order_by(Order.created_at.desc()).all()
+
+@app.delete('/api/me/books/{book_id}')
+def api_me_delete_book(book_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    book = db.query(Book).filter(Book.id == book_id, Book.seller_id == current_user.id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail='Book not found or not owned by user')
+    if db.query(Order).filter(Order.book_id == book.id).count() > 0:
+        # safety: prevent deleting if orders reference it
+        raise HTTPException(status_code=400, detail='存在关联订单，无法删除')
+    db.delete(book)
+    db.commit()
+    return {'deleted': True}
 
 @app.post('/api/orders/{order_id}/pay', response_model=OrderOut)
 def pay_order(order_id: str, payload: PaymentConfirmPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -826,38 +902,21 @@ def pay_order(order_id: str, payload: PaymentConfirmPayload, db: Session = Depen
     db.commit(); db.refresh(order)
     return order
 
-@app.post('/api/orders/{order_id}/cancel', response_model=OrderOut)
-def cancel_order(order_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    order = db.query(Order).filter(Order.id == order_id, Order.buyer_id == current_user.id).first()
-    if not order:
-        raise HTTPException(status_code=404, detail='Order not found')
-    if order.status in [OrderStatus.completed, OrderStatus.cancelled]:
-        raise HTTPException(status_code=400, detail='Order already finalized')
-    book = db.query(Book).filter(Book.id == order.book_id).first()
-    if book and book.status == BookStatus.reserved:
-        book.status = BookStatus.available
-    order.status = OrderStatus.cancelled
-    order.payment_status = PaymentStatus.failed
-    order.cancelled_at = datetime.datetime.utcnow()
-    db.commit(); db.refresh(order)
-    return order
-
-@app.get('/api/me/orders/pending', response_model=List[OrderOut])
-def api_me_pending_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Order).filter(and_(Order.buyer_id == current_user.id, Order.status == OrderStatus.pending, Order.payment_status == PaymentStatus.pending)).order_by(Order.created_at.desc()).all()
-
-@app.post('/api/cron/release-expired')
-def cron_release_expired(db: Session = Depends(get_db)):
-    now = datetime.datetime.utcnow()
-    expired_orders = db.query(Order).filter(and_(Order.status == OrderStatus.pending, Order.payment_status == PaymentStatus.pending, Order.payment_due_at != None, Order.payment_due_at < now)).all()
-    changed = 0
-    for order in expired_orders:
-        order.status = OrderStatus.cancelled
-        order.payment_status = PaymentStatus.failed
-        order.cancelled_at = now
-        book = db.query(Book).filter(Book.id == order.book_id).first()
-        if book and book.status == BookStatus.reserved:
-            book.status = BookStatus.available
-        changed += 1
-    db.commit()
-    return {'released': changed}
+@app.post('/api/uploads/images')
+async def upload_image(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='文件名无效')
+    ext = Path(file.filename).suffix.lower()
+    allowed = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail='不支持的图片格式')
+    data = await file.read()
+    max_size = 5 * 1024 * 1024
+    if len(data) > max_size:
+        raise HTTPException(status_code=400, detail='图片大小不能超过5MB')
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = UPLOAD_DIR / filename
+    with open(dest, 'wb') as f:
+        f.write(data)
+    url_path = f"/uploads/{filename}"
+    return {'url': url_path, 'filename': filename}

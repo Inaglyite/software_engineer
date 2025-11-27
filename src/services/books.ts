@@ -9,6 +9,8 @@ const adapt = (b: Book): Book => {
     price: b.selling_price ?? b.price ?? b.originalPrice ?? 0,
     originalPrice: b.original_price ?? b.originalPrice ?? 0,
     condition: b.condition_level ?? b.condition,
+    cover_image: b.cover_image ?? b.images?.[0] ?? null,
+    gallery_images: b.gallery_images ?? b.images ?? [],
     sellerId: b.seller_id ?? b.sellerId,
   };
 };
@@ -53,10 +55,15 @@ export interface CreateBookPayload {
   isbn: string;
   title: string;
   author: string;
+  publisher: string;
+  publish_year?: number;
+  edition?: string;
   original_price: number;
   selling_price: number;
   condition_level: 'excellent' | 'good' | 'fair' | 'poor';
   description?: string;
+  cover_image: string;
+  gallery_images: string[];
   seller_id: string;
 }
 

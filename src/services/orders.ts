@@ -1,29 +1,23 @@
 import api from './api';
 import type { Order } from '../types/order';
 
-export interface CreateOrderPayload {
-  book_id: string;
-  delivery_method: 'meetup' | 'delivery';
+export interface PurchasePayload {
+  delivery_method?: 'meetup' | 'delivery';
   meetup_location?: string;
-  meetup_time?: string;
-  payment_method?: 'wechat' | 'alipay' | 'cash';
+  pickup_location?: string;
+  delivery_location?: string;
 }
 
-export async function createOrder(payload: CreateOrderPayload) {
-  const userId = localStorage.getItem('user_id');
-  if (!userId) throw new Error('未登录');
-  const { data } = await api.post<Order>('/orders', {
-    ...payload,
-    buyer_id: userId,
-  });
+export async function purchaseBook(bookId: string, payload: PurchasePayload = {}) {
+  const { data } = await api.post<Order>(`/books/${bookId}/purchase`, payload);
   return data;
 }
 
-export async function createOrderFromDetail(bookId: string) {
-  return createOrder({ book_id: bookId, delivery_method: 'meetup' });
+export async function purchaseBookFromDetail(bookId: string) {
+  return purchaseBook(bookId, { delivery_method: 'meetup' });
 }
 
-export async function payOrder(orderId: string, payment_method?: CreateOrderPayload['payment_method']) {
+export async function payOrder(orderId: string, payment_method?: 'wechat' | 'alipay' | 'cash') {
   const { data } = await api.post<Order>(`/orders/${orderId}/pay`, { payment_method });
   return data;
 }

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Tabs, Descriptions, Form, Input, Button, message, Table, Tag } from 'antd';
+import { Card, Tabs, Descriptions, Form, Input, Button, message, Table, Tag, Popconfirm } from 'antd';
 import type { TabsProps } from 'antd';
 import type { UserProfile } from '../types/user';
 import type { Order } from '../types/order';
 import type { Book } from '../types/book';
-import { fetchProfile, updateProfile, changePassword, fetchMyOrders, fetchMySales, fetchMyBooks } from '../services/user';
+import { fetchProfile, updateProfile, changePassword, fetchMyOrders, fetchMySales, fetchMyBooks, deleteMyOrder, deleteMySale, deleteMyBook } from '../services/user';
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 
@@ -106,12 +106,68 @@ export default function PersonalCenter() {
     }
   };
 
+  const handleDeleteOrder = async (orderId: string) => {
+    try {
+      await deleteMyOrder(orderId);
+      message.success('订单已删除');
+      loadOrders();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '删除订单失败');
+    }
+  };
+
+  const handleDeleteSale = async (orderId: string) => {
+    try {
+      await deleteMySale(orderId);
+      message.success('售出记录已删除');
+      loadSales();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '删除售出记录失败');
+    }
+  };
+
+  const handleDeleteBook = async (bookId: string) => {
+    try {
+      await deleteMyBook(bookId);
+      message.success('书籍已删除');
+      loadBooks();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '删除书籍失败');
+    }
+  };
+
   const orderColumns: ColumnsType<Order> = [
     { title: '订单号', dataIndex: 'order_number', key: 'order_number' },
     { title: '书籍ID', dataIndex: 'book_id', key: 'book_id', render: (id: string) => <Link to={`/books/${id}`}>{id}</Link> },
     { title: '金额', dataIndex: 'total_amount', key: 'total_amount', render: (v: number) => `¥${v}` },
     { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={statusColor[v] || 'default'}>{v}</Tag> },
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_, record) => (
+        <Popconfirm title="确定删除该订单吗？" onConfirm={() => handleDeleteOrder(record.id)}>
+          <Button danger size="small">删除</Button>
+        </Popconfirm>
+      ),
+    },
+  ];
+
+  const saleColumns: ColumnsType<Order> = [
+    { title: '订单号', dataIndex: 'order_number', key: 'order_number' },
+    { title: '书籍ID', dataIndex: 'book_id', key: 'book_id', render: (id: string) => <Link to={`/books/${id}`}>{id}</Link> },
+    { title: '金额', dataIndex: 'total_amount', key: 'total_amount', render: (v: number) => `¥${v}` },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={statusColor[v] || 'default'}>{v}</Tag> },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_, record) => (
+        <Popconfirm title="确定删除该售出记录吗？" onConfirm={() => handleDeleteSale(record.id)}>
+          <Button danger size="small">删除</Button>
+        </Popconfirm>
+      ),
+    },
   ];
 
   const bookColumns: ColumnsType<Book> = [
@@ -119,6 +175,15 @@ export default function PersonalCenter() {
     { title: '售价', dataIndex: 'selling_price', key: 'selling_price', render: (v: number) => `¥${v}` },
     { title: '状态', dataIndex: 'status', key: 'status' },
     { title: 'ISBN', dataIndex: 'isbn', key: 'isbn' },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_, record) => (
+        <Popconfirm title="确定删除该在售书籍吗��" onConfirm={() => handleDeleteBook(record.id)}>
+          <Button danger size="small">删除</Button>
+        </Popconfirm>
+      ),
+    },
   ];
 
   const items: TabsProps['items'] = [
@@ -180,7 +245,7 @@ export default function PersonalCenter() {
       label: '我的售出',
       children: (
         <Card title="我卖出的订单" extra={<Button onClick={loadSales} loading={loading.sales}>刷新</Button>}>
-          <Table rowKey="id" dataSource={sales} columns={orderColumns} pagination={{ pageSize: 5 }} loading={loading.sales} />
+          <Table rowKey="id" dataSource={sales} columns={saleColumns} pagination={{ pageSize: 5 }} loading={loading.sales} />
         </Card>
       ),
     },

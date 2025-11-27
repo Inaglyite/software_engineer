@@ -25,8 +25,18 @@ export async function fetchMyBooks() {
   return data;
 }
 
+export async function deleteMyBook(bookId: string) {
+  const { data } = await api.delete(`/me/books/${bookId}`);
+  return data;
+}
+
 export async function fetchMyOrders() {
   const { data } = await api.get<Order[]>('/me/orders');
+  return data;
+}
+
+export async function deleteMyOrder(orderId: string) {
+  const { data } = await api.delete(`/orders/${orderId}`);
   return data;
 }
 
@@ -35,3 +45,6 @@ export async function fetchMySales() {
   return data;
 }
 
+export async function deleteMySale(orderId: string) {
+  return deleteMyOrder(orderId);
+}

@@ -64,13 +64,20 @@ export default function Books() {
               <List.Item>
                 <Link to={`/books/${b.id}`} style={{ display: 'block' }}>
                   <Card hoverable size="small">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ fontWeight: 600 }}>{b.title}</div>
-                      <div style={{ fontSize: 12, color: '#555' }}>作者：{b.author}</div>
-                      <div style={{ fontSize: 12 }}>价格：¥{b.price ?? b.selling_price ?? b.original_price}</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {cond && <Tag color={conditionColor[cond] || 'default'} style={{ width: 'fit-content' }}>{cond}</Tag>}
-                        {b.status && <Tag>{b.status}</Tag>}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      {b.cover_image ? (
+                        <img src={b.cover_image} alt="cover" style={{ width: 96, height: 128, objectFit: 'cover', borderRadius: 4 }} />
+                      ) : (
+                        <div style={{ width: 96, height: 128, background: '#f0f0f0', borderRadius: 4 }} />
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ fontWeight: 600 }}>{b.title}</div>
+                        <div style={{ fontSize: 12, color: '#555' }}>作者：{b.author}</div>
+                        <div style={{ fontSize: 12 }}>价格：¥{b.price ?? b.selling_price ?? b.original_price}</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {cond && <Tag color={conditionColor[cond] || 'default'} style={{ width: 'fit-content' }}>{cond}</Tag>}
+                          {b.status && <Tag>{b.status}</Tag>}
+                        </div>
                       </div>
                     </div>
                   </Card>
