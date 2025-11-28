@@ -11,6 +11,8 @@ from .models.book import Book, ConditionLevel, BookStatus
 from .models.user import User
 from .models.order import Order, OrderStatus, DeliveryMethod, PaymentMethod, PaymentStatus
 from .models.delivery_task import DeliveryTask, DeliveryTaskStatus
+from .models.favorite import Favorite
+from .models.review import Review, ReviewRole
 import os
 from pathlib import Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -47,6 +49,8 @@ class BookOut(BaseModel):
     gallery_images: list[str] | None = None
     seller_id: str
     status: BookStatus
+    favorite_count: int
+    view_count: int
 
     class Config:
         from_attributes = True
@@ -55,7 +59,7 @@ class BookCreate(BaseModel):
     isbn: str
     title: str
     author: str
-    publisher: str
+    publisher: str | None = None
     publish_year: int | None = None
     edition: str | None = None
     original_price: float
@@ -215,16 +219,19 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     return user
 
 @app.get("/api/books", response_model=List[BookOut])
-def list_books(q: str | None = None, db: Session = Depends(get_db)):
+def list_books(q: str | None = None, category_id: int | None = None, db: Session = Depends(get_db)):
     query = db.query(Book)
     if q:
         like = f"%{q}%"
         query = query.filter((Book.title.ilike(like)) | (Book.author.ilike(like)) | (Book.isbn.ilike(like)))
+    if category_id:
+        query = query.filter(Book.category_id == category_id)
+    books = query.order_by(Book.created_at.desc()).limit(50).all()
     return [
         BookOut(
             **{**b.__dict__, 'gallery_images': json.loads(b.gallery_images or '[]')}
         )
-        for b in query.order_by(Book.created_at.desc()).limit(50).all()
+        for b in books
     ]
 
 @app.get("/api/books/{book_id}", response_model=BookOut)
@@ -920,3 +927,93 @@ async def upload_image(file: UploadFile = File(...), current_user: User = Depend
         f.write(data)
     url_path = f"/uploads/{filename}"
     return {'url': url_path, 'filename': filename}
+
+class FavoriteOut(BaseModel):
+    id: int
+    user_id: str
+    book_id: str
+    created_at: datetime.datetime | None = None
+    book: BookOut
+
+    class Config:
+        from_attributes = True
+
+class ReviewOut(BaseModel):
+    id: str
+    order_id: str
+    reviewer_id: str
+    reviewed_id: str
+    book_id: str | None = None
+    role: ReviewRole
+    rating: int
+    content: str | None = None
+    tags: list[str] | None = None
+    is_anonymous: bool
+    created_at: datetime.datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+class ReviewCreate(BaseModel):
+    rating: int
+    content: str | None = None
+    tags: list[str] | None = None
+    is_anonymous: bool = False
+
+@app.post("/api/books/{book_id}/favorite", response_model=FavoriteOut)
+def favorite_book(book_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail='Book not found')
+    fav = db.query(Favorite).filter(Favorite.book_id == book_id, Favorite.user_id == current_user.id).first()
+    if fav:
+        return FavoriteOut(book=fav.book, **fav.__dict__)
+    fav = Favorite(book_id=book_id, user_id=current_user.id)
+    book.favorite_count += 1
+    db.add(fav)
+    db.commit(); db.refresh(fav); db.refresh(book)
+    return FavoriteOut(book=fav.book, **fav.__dict__)
+
+@app.delete('/api/books/{book_id}/favorite')
+def unfavorite_book(book_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    fav = db.query(Favorite).filter(Favorite.book_id == book_id, Favorite.user_id == current_user.id).first()
+    if not fav:
+        raise HTTPException(status_code=404, detail='Favorite not found')
+    book = fav.book
+    db.delete(fav)
+    if book.favorite_count > 0:
+        book.favorite_count -= 1
+    db.commit(); db.refresh(book)
+    return {'deleted': True}
+
+@app.get('/api/me/favorites', response_model=List[FavoriteOut])
+def list_my_favorites(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    favs = db.query(Favorite).filter(Favorite.user_id == current_user.id).order_by(Favorite.created_at.desc()).all()
+    return [FavoriteOut(book=f.book, **f.__dict__) for f in favs]
+
+@app.post('/api/orders/{order_id}/reviews', response_model=ReviewOut)
+def create_review(order_id: str, payload: ReviewCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if current_user.id not in (order.buyer_id, order.seller_id):
+        raise HTTPException(status_code=403, detail='无权评价该订单')
+    review = Review(
+        order_id=order_id,
+        reviewer_id=current_user.id,
+        reviewed_id=order.seller_id if current_user.id == order.buyer_id else order.buyer_id,
+        book_id=order.book_id,
+        role=ReviewRole.buyer if current_user.id == order.buyer_id else ReviewRole.seller,
+        rating=payload.rating,
+        content=payload.content,
+        tags=payload.tags,
+        is_anonymous=payload.is_anonymous,
+    )
+    db.add(review)
+    db.commit(); db.refresh(review)
+    return review
+
+@app.get('/api/books/{book_id}/reviews', response_model=List[ReviewOut])
+def list_book_reviews(book_id: str, db: Session = Depends(get_db)):
+    reviews = db.query(Review).filter(Review.book_id == book_id).order_by(Review.created_at.desc()).all()
+    return reviews

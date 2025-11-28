@@ -1,45 +1,55 @@
 # 东华二手书平台 (DHU Secondhand Books)
 
-一个面向校园二手书交易 + 众包配送的全栈原型。前端：React + TypeScript + Vite + Ant Design；后端：FastAPI + SQLAlchemy；数据库：MySQL。
+一个面向校园二手书交易 + 众包配送的全栈原型，支持书籍发布/收藏/购买、订单支付、众包配送、评价体系与个人中心。前端：React + TypeScript + Vite + Ant Design；后端：FastAPI + SQLAlchemy 2.x + Alembic；数据库：MySQL 8；鉴权：简单 Token（可扩展 JWT）。
 
-> 本 README 提供“保姆级”部署教程（Linux / Windows），包括一键脚本、手动命令、数据库初始化、功能验证与排错。
+> 本 README 提供“保姆级”部署教程（Linux / Windows），包含一键脚本、手动命令、数据库初始化、Alembic 迁移、功能验证与排错。
 
-## 目录
-1. 快速体验
-2. 环境准备
-3. 保姆级部署（Linux）
-4. 保姆级部署（Windows）
-5. 一键脚本命令说明
-6. 手动启动（不使用脚本）
-7. 数据库初始化与种子数据
-8. 功能验证流程（发布 / 购买 / 配送）
-9. 环境变量
-10. 常见问题排查 FAQ
-11. Git 提交与推送教程
-12. 下一步 Roadmap
+## Checklist
+- [ ] 快速体验 / Tech Stack
+- [ ] 环境准备
+- [ ] 保姆级部署（Linux）
+- [ ] 保姆级部署（Windows）
+- [ ] 脚本命令说明
+- [ ] 手动启动 & Alembic 迁移
+- [ ] 数据库 & 种子数据
+- [ ] 功能验证流程
+- [ ] 环境变量
+- [ ] FAQ
+- [ ] Git 推送指引
+- [ ] Roadmap / Feature Highlight
 
 ---
-## 1. 快速体验
-```bash
-# Linux / macOS (首次)
-chmod +x scripts/run_mvp.sh
-./scripts/run_mvp.sh start
+## 1. 快速体验 & Feature Highlight
+| 功能 | 描述 |
+|------|------|
+| 书籍管理 | 发布/编辑/删除/上下架，必填 ISBN、书名、作者、出版社、封面；可选出版年份/版次/多图。 |
+| 收藏夹 | `POST /api/books/{id}/favorite` 与 `DELETE /favorite`，前端个人中心支持查看。 |
+| 购买流程 | `/books/{id}/purchase` → 生成 15 分钟待支付订单；未支付自动释放库存。 |
+| 支付/订单 | 订单状态、支付状态联动，个人中心可查看「我的订单/售出/在售」。 |
+| 评价体系 | 买家/卖家可对完成订单写评价，支持标签/匿名。 |
+| 众包配送 | 订单可生成 Delivery Task，配送员接单、状态流转。 |
+| 后端管理页 | `/admin` 提供书籍 / 订单 / 用户审查与下架。 |
+| 静态资源 | `/uploads` 存储封面/相册，支持多图上传。 |
 
-# Windows (CMD)
-run.bat start
-```
-前端默认地址：http://localhost:5173  后端 API: http://127.0.0.1:8000
+### 技术栈
+- **前端**：Vite + React + TypeScript + Ant Design + Axios
+- **后端**：FastAPI、Pydantic v2、SQLAlchemy 2.0 ORM（自定义 Mixins、关联关系）
+- **数据库**：MySQL 8（推荐），通过 `database/SecondHandData.sql` 初始化
+- **迁移**：Alembic（`alembic revision --autogenerate` / `alembic upgrade head`）
+- **依赖管理**：pip + requirements.txt / npm + package-lock
+- **脚本**：`scripts/run_mvp.sh`（Linux）与 `run.bat`（Windows）一键起停
 
 ---
 ## 2. 环境准备
 | 组件 | 版本建议 | 备注 |
 |------|----------|------|
-| Python | ≥ 3.10 | 后端运行 & 虚拟环境 |
-| Node.js | ≥ 16 | 前端构建与开发 |
-| MySQL Server | 5.7/8.x | 需创建用户与库 |
-| Git | 最新 | 代码版本管理 |
+| Python | ≥ 3.10 | 建议 3.11+，需 `python3-venv` |
+| Node.js | ≥ 18 | Vite dev server |
+| MySQL | 8.x（支持 5.7） | 已创建用户 `Inaglyite / H20041227j` |
+| Git | 最新 | clone / push |
+| OpenSSL / cryptography | 最新 | MySQL caching_sha2_auth 需 `cryptography` Python 包 |
 
-Linux 依赖建议：
+Linux 依赖示例：
 ```bash
 sudo apt update
 sudo apt install -y python3-venv mysql-client build-essential
@@ -47,217 +57,213 @@ sudo apt install -y python3-venv mysql-client build-essential
 
 ---
 ## 3. 保姆级部署（Linux / macOS）
-### 步骤 1：克隆代码
-```bash
-git clone https://github.com/Inaglyite/software_engineer.git
-cd software_engineer
-```
-### 步骤 2：配置数据库
-1. 登录 MySQL：`mysql -u Inaglyite -p`（输入密码：H20041227j）
-2. 创建数据库（若不存在）：
-```sql
-CREATE DATABASE IF NOT EXISTS dhu_secondhand_platform DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-### 步骤 3：填写环境变量（可选）
-创建文件 `backend/.env`：
-```
-DB_USER=Inaglyite
-DB_PASS=H20041227j
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=dhu_secondhand_platform
-```
-### 步骤 4：运行脚本
-```bash
-chmod +x scripts/run_mvp.sh
-./scripts/run_mvp.sh start   # 初始化数据库、启动后端与前端
-./scripts/run_mvp.sh status  # 查看运行状态
-```
-### 步骤 5：验证
-```bash
-curl http://127.0.0.1:8000/api/health
-curl http://127.0.0.1:8000/api/books
-curl http://127.0.0.1:8000/api/debug/info
-```
-看到书籍示例即成功。
+1. **克隆**
+   ```bash
+   git clone https://github.com/Inaglyite/software_engineer.git
+   cd software_engineer
+   ```
+2. **数据库**（首次）
+   ```sql
+   CREATE DATABASE IF NOT EXISTS dhu_secondhand_platform
+     DEFAULT CHARACTER SET utf8mb4
+     COLLATE utf8mb4_unicode_ci;
+   ```
+3. **环境变量（可选）**：创建 `backend/.env`
+   ```env
+   DB_USER=Inaglyite
+   DB_PASS=H20041227j
+   DB_HOST=127.0.0.1
+   DB_PORT=3306
+   DB_NAME=dhu_secondhand_platform
+   ```
+4. **一键脚本**
+   ```bash
+   chmod +x scripts/run_mvp.sh
+   ./scripts/run_mvp.sh start     # 初始化 DB + 创建 venv + 启动前后端
+   ./scripts/run_mvp.sh status    # 查看 PID / 端口
+   ./scripts/run_mvp.sh logs      # 打印后端日志路径
+   ```
+5. **验证**
+   ```bash
+   curl http://127.0.0.1:8000/api/health
+   curl http://127.0.0.1:8000/api/books
+   ```
+   浏览器打开：http://localhost:5173
 
 ---
 ## 4. 保姆级部署（Windows）
-### 步骤 1：克隆代码
-在 PowerShell 或 CMD：
-```bat
+1. **克隆**
+   ```bat
 git clone https://github.com/Inaglyite/software_engineer.git
 cd software_engineer
+   ```
+2. **MySQL**：使用 Workbench / 命令行执行与 Linux 相同的建库 SQL。
+3. **初始化 & 启动**
+   ```bat
+run.bat init    REM 创建 venv + 安装依赖
+run.bat start   REM 启动前端/后端
+   ```
+4. **验证**：浏览器访问 http://localhost:5173 与 http://127.0.0.1:8000/docs
+
+---
+## 5. 脚本命令速查
+### Linux：`scripts/run_mvp.sh`
+```bash
+./scripts/run_mvp.sh start       # 初始化 DB + 启动
+./scripts/run_mvp.sh stop        # 停止前后端
+./scripts/run_mvp.sh restart     # 重启后端
+./scripts/run_mvp.sh backend     # 仅后端（uvicorn）
+./scripts/run_mvp.sh frontend    # 仅前端（npm run dev）
+./scripts/run_mvp.sh seed        # 执行 scripts/seed_data.py
+./scripts/run_mvp.sh status      # 显示 PID、端口
+./scripts/run_mvp.sh kill-port   # 释放 8000
+./scripts/run_mvp.sh logs        # tail 后端日志
 ```
-### 步骤 2：配置数据库（使用 MySQL Workbench 或命令行）
-```sql
-CREATE DATABASE IF NOT EXISTS dhu_secondhand_platform DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-### 步骤 3：创建后端虚拟环境 + 前端依赖（自动）
+
+### Windows：`run.bat`
 ```bat
 run.bat init
-```
-### 步骤 4：启动
-```bat
 run.bat start
-```
-### 步骤 5：验证
-浏览器访问：http://localhost:5173 与 http://127.0.0.1:8000/docs
-
----
-## 5. 一键脚本命令说明
-### Linux 脚本 `scripts/run_mvp.sh`
-```bash
-./scripts/run_mvp.sh start       # 初始化数据库 + 启动后端与前端
-./scripts/run_mvp.sh backend     # 只启后端
-./scripts/run_mvp.sh frontend    # 只启前端
-./scripts/run_mvp.sh db-only     # 仅导入数据库(若不存在)
-./scripts/run_mvp.sh status      # 查看状态
-./scripts/run_mvp.sh stop        # 停止后端与前端
-./scripts/run_mvp.sh restart     # 重启后端
-./scripts/run_mvp.sh kill-port   # 释放被占用的 8000 端口
-./scripts/run_mvp.sh seed        # 执行种子数据脚本
-./scripts/run_mvp.sh logs        # 快速查看最新日志
-```
-### Windows 脚本 `run.bat`
-```bat
-run.bat init       REM 初始化(后端 venv + 前端依赖)
-run.bat start      REM 启动后端 + 前端
-run.bat backend    REM 仅启动后端
-run.bat frontend   REM 仅启动前端
-run.bat status     REM 显示状态
-run.bat stop       REM 停止(需要手动关闭窗口)
-run.bat seed       REM 种子数据导入
-run.bat logs       REM 查看日志文件路径提示
+run.bat backend
+run.bat frontend
+run.bat status
+run.bat stop
+run.bat seed
+run.bat logs
 ```
 
 ---
-## 6. 手动启动（不使用脚本）
+## 6. 手动启动 + Alembic 迁移
 ### 后端
 ```bash
 python -m venv backend/.venv
 source backend/.venv/bin/activate
 pip install -r backend/requirements.txt
-export DB_USER=Inaglyite DB_PASS=H20041227j DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=dhu_secondhand_platform
+export DB_USER=Inaglyite DB_PASS=H20041227j DB_NAME=dhu_secondhand_platform
+alembic upgrade head   # 同步 schema（首次需先 revision）
 uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+> 如果提示 `cryptography` 缺失：`pip install cryptography`
+
 ### 前端
 ```bash
 npm install
 npm run dev
 ```
 
----
-## 7. 数据库初始化与种子数据
-自动导入：首次执行 `./scripts/run_mvp.sh start` 会检查数据库是否存在，不存在则执行 `database/SecondHandData.sql`，并在应用启动事件中插入基础书籍与用户。
-手动种子：
+### Alembic 工作流
 ```bash
-./scripts/run_mvp.sh seed
-# 或 Windows
-run.bat seed
+cd backend
+source .venv/bin/activate
+alembic revision --autogenerate -m "feat: update schema"
+alembic upgrade head
 ```
-脚本会再次确保存在一个 seed 用户并补充至少 2 本书。
+- `backend/alembic.ini` 已指向本地 MySQL；也可通过 `.env` 覆盖。
+- 模型定义位于 `backend/app/models/*.py`，包含 mixin / 关联关系。
 
 ---
-## 8. 功能验证流程
-1. 注册用户：`POST /api/users`
+## 7. 数据库初始化与种子数据
+- **自动导入**：首次 `./scripts/run_mvp.sh start` 会检测数据库，必要时执行 `database/SecondHandData.sql`，并通过 `startup` 钩子补充列（publisher/cover/pickup_location 等）。
+- **手动执行脚本**：
+  ```bash
+  mysql -u Inaglyite -p dhu_secondhand_platform < database/SecondHandData.sql
+  ./scripts/run_mvp.sh seed
+  ```
+- **种子内容**：`seed_data.py` 创建一个种子卖家与至少两本书，便于验证前端。
+
+---
+## 8. 功能验证流程（API 示例）
 ```bash
-curl -X POST http://127.0.0.1:8000/api/users -H 'Content-Type: application/json' -d '{"student_id":"20250001","name":"测试用户","phone":"13800001111","password":"pass123"}'
+# 1. 注册用户
+curl -X POST http://127.0.0.1:8000/api/users \
+  -H 'Content-Type: application/json' \
+  -d '{"student_id":"20250001","name":"Alice","phone":"13800001111","password":"pass123"}'
+
+# 2. 登录，得到 token
+curl -X POST http://127.0.0.1:8000/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"student_id":"20250001","password":"pass123"}'
+
+# 3. 发布书籍（带封面/相册）
+curl -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "isbn":"9787111122225",
+        "title":"活着",
+        "author":"余华",
+        "publisher":"作家出版社",
+        "original_price":50,
+        "selling_price":10,
+        "condition_level":"good",
+        "cover_image":"/uploads/demo.jpg",
+        "gallery_images":["/uploads/demo.jpg"],
+        "seller_id":"<user_id>"
+      }' \
+  http://127.0.0.1:8000/api/books
+
+# 4. 搜索/收藏/下单
+curl http://127.0.0.1:8000/api/books?q=%E6%B4%BB%E7%9D%80
+curl -H "Authorization: Bearer <token>" -X POST http://127.0.0.1:8000/api/books/<book_id>/favorite
+curl -H "Authorization: Bearer <token>" -X POST http://127.0.0.1:8000/api/books/<book_id>/purchase
+
+# 5. 付款 & 评价
+curl -H "Authorization: Bearer <token>" -X POST http://127.0.0.1:8000/api/orders/<order_id>/pay -d '{"payment_method":"wechat"}'
+curl -H "Authorization: Bearer <token>" -X POST http://127.0.0.1:8000/api/orders/<order_id>/reviews -d '{"rating":5,"content":"好书"}'
 ```
-2. 发布书籍：使用返回的 `id` 作为 `seller_id`
-```bash
-curl -X POST http://127.0.0.1:8000/api/books -H 'Content-Type: application/json' -d '{"isbn":"9787111549999","title":"操作系统实践","author":"测试作者","original_price":88,"selling_price":35,"condition_level":"good","description":"演示发布","seller_id":"<用户ID>"}'
-```
-3. 查询书籍：`GET /api/books`
-4. 创建订单（购买）：`POST /api/orders`
-```bash
-curl -X POST http://127.0.0.1:8000/api/orders -H 'Content-Type: application/json' -d '{"book_id":"<书籍ID>","buyer_id":"<买家用户ID>","delivery_method":"meetup","meetup_location":"图书馆门口"}'
-```
-5. 订单状态更新：`PATCH /api/orders/{order_id}` → 完成/取消会同步书籍状态。
 
 ---
 ## 9. 环境变量
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| DB_USER | Inaglyite | MySQL 用户名 |
-| DB_PASS | H20041227j | MySQL 密码 |
-| DB_HOST | 127.0.0.1 | 主机地址 |
-| DB_PORT | 3306 | 端口 |
-| DB_NAME | dhu_secondhand_platform | 数据库名 |
-
-可放入 `backend/.env` 或在运行命令前临时导出：
-```bash
-export DB_USER=Inaglyite DB_PASS=H20041227j DB_NAME=dhu_secondhand_platform
-```
+| `DB_USER` | Inaglyite | MySQL 用户名 |
+| `DB_PASS` | H20041227j | MySQL 密码 |
+| `DB_HOST` | 127.0.0.1 | 数据库地址 |
+| `DB_PORT` | 3306 | 端口 |
+| `DB_NAME` | dhu_secondhand_platform | 库名 |
+| `PAYMENT_WINDOW_MINUTES` | 15 | 待付款时限 |
+| `UVICORN_RELOAD` | false | 手动设置热重载 |
 
 ---
-## 10. 常见问题排查 FAQ
+## 10. FAQ & 排障
 | 问题 | 可能原因 | 解决 |
 |------|----------|------|
-| address already in use | 端口被旧进程占用 | `./scripts/run_mvp.sh kill-port` 或手动 kill |
-| Seller not found | 发布时 seller_id 不存在 | 先调用 /api/users 创建用户并用其 id |
-| hashed_password 列错误 | 初始 SQL 缺少列 | 应用启动已尝试添加；可重新导入 SQL 或手动 ALTER |
-| 前端不显示新书 | 使用了 mock 或缓存 | 刷新、检查网络请求是否指向 8000 端口 |
-| 书籍不能下架 | 前端未调用 PATCH 接口 | 调用 `/api/books/{id}/status` body: `{"status":"off_shelf"}` |
-| 订单未改变书籍状态 | 状态逻辑仅在 create/complete/cancel 中 | 检查响应与书籍状态字段 |
+| `address already in use` | 上次后端未关闭 | `./scripts/run_mvp.sh kill-port` 或 `fuser -k 8000/tcp` |
+| `Seller not found` | 发布书籍时 `seller_id` 不存在 | 先创建用户 / 使用登陆返回的 `user_id` |
+| `Book not available` | 书籍已被保留/售出 | 在个人中心上架/取消订单 |
+| `Cannot drop index ...` | Alembic 尝试删除 FK 依赖索引 | 调整迁移脚本：先删除 FK 再删索引或跳过 |
+| `RuntimeError: cryptography required` | MySQL caching_sha2_password | `pip install cryptography` 后重试 |
+| 前端 UI 不居中 | CSS 使用 px | 使用 `flex`/`grid` 或修改 `App.css` |
+| 书籍详情返回 | React Router 状态缓存 | 目前已修复，若仍复现请刷新并清理缓存 |
 
-查看日志：
-```bash
-./scripts/run_mvp.sh logs
-```
+查看日志：`tail -f .logs/backend.out`
 
 ---
-## 11. Git 提交与推送教程
-首次推送：
+## 11. Git 提交与推送
 ```bash
-git init   # 若仓库未初始化
-# 添加远程（已存在则跳过）
-git remote add origin https://github.com/Inaglyite/software_engineer.git
-# 查看变更
 git status
-# 添加所有文件
 git add .
-# 提交
-git commit -m "feat: 初始项目文档与脚本"
-# 推送到 master 分支
+git commit -m "feat: update orm + docs"
 git push -u origin master
 ```
-如果出现 TLS 断开错误，可尝试：
+若出现 `GnuTLS recv error (-110)`：
 ```bash
 git config --global http.postBuffer 524288000
 git config --global http.lowSpeedLimit 0
 git config --global http.lowSpeedTime 999999
 ```
-或使用 SSH：
-```bash
-# 生成 SSH 密钥（若无）
-ssh-keygen -t ed25519 -C "your_email@example.com"
-# 将公钥加入 GitHub，然后：
-git remote set-url origin git@github.com:Inaglyite/software_engineer.git
-```
+或改用 SSH：`git remote set-url origin git@github.com:Inaglyite/software_engineer.git`
 
 ---
-## 12. 下一步 Roadmap
-- ✅ 基础书籍 CRUD / 订单创建
-- 🔜 用户登录 / JWT 授权
-- 🔜 配送任务接单流程
-- 🔜 图片上���（封面）
-- 🔜 分页 / 排序 / 筛选
-- 🔜 Alembic 迁移管理
+## 12. Roadmap
+- ✅ 书籍 CRUD / 收藏 / 订单 / 配送任务 / 评价 / 个人中心
+- ✅ Alembic + SQLAlchemy ORM 重构（BookImage、Courier、Favorite、Review、Chat、Announcement 等模型）
+- 🔜 JWT / Refresh Token & RBAC
+- 🔜 图片上传直传 OSS / CDN
+- 🔜 WebSocket 聊天、消息推送
+- 🔜 完整支付流程（第三方接口）
+- 🔜 更细粒度的后台权限 + 数据可视化
 
----
 ## 贡献方式
-欢迎提交 PR：
-1. 分支命名：`feat/xxx` `fix/xxx`
-2. 提交信息：`feat: 描述` / `fix: 描述`
-3. 确保脚本与接口可正常运行：
-```bash
-./scripts/run_mvp.sh status
-npm run build
-```
+1. Fork & Clone；2. 新建分支 `feat/xxx`；3. 提交前运行 `npm run build` 与 `./scripts/run_mvp.sh status`；4. 提交 PR 描述改动与测试结果。
 
-## 许可证
-当前为内部原型，尚未指定开源许可证（可后续选择 MIT / Apache-2.0）。
-
----
-如果部署或功能测试遇到其它问题，可以在 Issues 中描述复现步骤与日志片段（`./scripts/run_mvp.sh logs` 输出）以便快速定位。祝你开发顺利！
+欢迎反馈 Bug 或提交改进！

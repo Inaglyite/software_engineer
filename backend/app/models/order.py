@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, DECIMAL, Enum, TIMESTAMP, ForeignKey, VARCHAR
-from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from ..database import Base
+from .mixins import UUIDPrimaryKeyMixin, TimestampMixin
 import enum
 
 class OrderStatus(enum.Enum):
@@ -27,9 +28,8 @@ class PaymentStatus(enum.Enum):
     failed = 'failed'
     refunded = 'refunded'
 
-class Order(Base):
+class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = 'orders'
-    id = Column(String(36), primary_key=True)
     order_number = Column(String(50), unique=True, nullable=False)
     book_id = Column(String(36), ForeignKey('books.id'), nullable=False)
     buyer_id = Column(String(36), ForeignKey('users.id'), nullable=False)
@@ -47,7 +47,11 @@ class Order(Base):
     payment_status = Column(Enum(PaymentStatus), nullable=False, default=PaymentStatus.pending)
     payment_due_at = Column(TIMESTAMP)
     paid_at = Column(TIMESTAMP)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     completed_at = Column(TIMESTAMP)
     cancelled_at = Column(TIMESTAMP)
+
+    book = relationship('Book', back_populates='orders')
+    buyer = relationship('User', back_populates='orders_as_buyer', foreign_keys=[buyer_id])
+    seller = relationship('User', back_populates='orders_as_seller', foreign_keys=[seller_id])
+    delivery_task = relationship('DeliveryTask', back_populates='order', uselist=False, cascade='all, delete-orphan')
+    reviews = relationship('Review', back_populates='order', cascade='all, delete-orphan')
