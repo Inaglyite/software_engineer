@@ -1,3 +1,4 @@
+# coding: utf-8
 from sqlalchemy import Column, Integer, String, Text, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,4 +16,3 @@ class Announcement(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     author = relationship('User', back_populates='announcements')
-

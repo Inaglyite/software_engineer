@@ -319,6 +319,24 @@ def seed_data():
                     if exists == 0:
                         conn.execute(text(f"ALTER TABLE books ADD COLUMN {column} {ddl}"))
                         conn.commit()
+            # Ensure reviews table has book_id column for joins used by ORM
+            review_columns = [
+                ("book_id", "VARCHAR(36) NULL"),
+            ]
+            for column, ddl in review_columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE reviews ADD COLUMN IF NOT EXISTS {column} {ddl}"))
+                    conn.commit()
+                except Exception:
+                    exists = conn.execute(text("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME='reviews' AND COLUMN_NAME=:col"), {"db": db_name, "col": column}).scalar()
+                    if exists == 0:
+                        conn.execute(text(f"ALTER TABLE reviews ADD COLUMN {column} {ddl}"))
+                        conn.commit()
+            try:
+                conn.execute(text("UPDATE reviews r JOIN orders o ON r.order_id = o.id SET r.book_id = o.book_id WHERE r.book_id IS NULL"))
+                conn.commit()
+            except Exception:
+                pass
     except Exception as e:
         print("[WARN] Unable to ensure schema columns:", e)
     db = SessionLocal()
