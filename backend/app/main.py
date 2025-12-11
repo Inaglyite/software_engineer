@@ -219,8 +219,17 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     return user
 
 @app.get("/api/books", response_model=List[BookOut])
-def list_books(q: str | None = None, category_id: int | None = None, db: Session = Depends(get_db)):
+def list_books(q: str | None = None, category_id: int | None = None, include_status: str | None = None, db: Session = Depends(get_db)):
     query = db.query(Book)
+    if not include_status:
+        query = query.filter(Book.status == BookStatus.available)
+    else:
+        try:
+            statuses = [BookStatus[s.strip()] for s in include_status.split(',') if s.strip()]
+            if statuses:
+                query = query.filter(Book.status.in_(statuses))
+        except KeyError:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
     if q:
         like = f"%{q}%"
         query = query.filter((Book.title.ilike(like)) | (Book.author.ilike(like)) | (Book.isbn.ilike(like)))
@@ -423,6 +432,8 @@ def create_order(payload: OrderCreate, db: Session = Depends(get_db)):
     import uuid, datetime
     # Simple order number: YYYYMMDDHHMMSS + 6 hex
     order_number = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:6]
+    if payload.delivery_method == DeliveryMethod.delivery and (not payload.pickup_location or not payload.delivery_location):
+        raise HTTPException(status_code=400, detail="配送方式需要取书和送书地址")
     delivery_fee = 0 if payload.delivery_method == DeliveryMethod.meetup else 5
     total_amount = float(book.selling_price) + delivery_fee
     meetup_time_dt = None
@@ -489,16 +500,14 @@ def update_order(order_id: str, payload: OrderStatusUpdate, db: Session = Depend
     if payload.status == OrderStatus.completed:
         import datetime
         o.completed_at = datetime.datetime.utcnow()
-        # Also mark book sold
         book = db.query(Book).filter(Book.id == o.book_id).first()
         if book:
             book.status = BookStatus.sold
-    if payload.status == OrderStatus.cancelled:
+    elif payload.status == OrderStatus.cancelled:
         import datetime
         o.cancelled_at = datetime.datetime.utcnow()
-        # Release book
         book = db.query(Book).filter(Book.id == o.book_id).first()
-        if book and book.status == BookStatus.reserved:
+        if book and book.status != BookStatus.sold:
             book.status = BookStatus.available
     db.commit()
     db.refresh(o)
@@ -752,7 +761,7 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security), db
     return u
 
 @app.post('/api/books/{book_id}/purchase', response_model=OrderOut)
-def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod.meetup, meetup_location: str | None = None, pickup_location: str | None = None, delivery_location: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod.meetup, meetup_location: str | None = None, pickup_location: str | None = None, delivery_location: str | None = None, delivery_fee: float | None = None, desired_delivery_time: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     book = db.query(Book).filter(Book.id == book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail='Book not found')
@@ -764,8 +773,11 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
     if book.seller_id == current_user.id:
         raise HTTPException(status_code=400, detail='Cannot purchase your own listing')
     order_number = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S') + uuid.uuid4().hex[:6]
-    delivery_fee = 0 if delivery_method == DeliveryMethod.meetup else 5
-    total_amount = float(book.selling_price) + delivery_fee
+    if delivery_method == DeliveryMethod.delivery and (not pickup_location or not delivery_location):
+        raise HTTPException(status_code=400, detail='配送方式需要填写取书和送书地点')
+    auto_fee = 0 if delivery_method == DeliveryMethod.meetup else 5
+    final_fee = delivery_fee if delivery_fee is not None else auto_fee
+    total_amount = float(book.selling_price) + float(final_fee)
     payment_due_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=PAYMENT_WINDOW_MINUTES)
     order = Order(
         id=str(uuid.uuid4()),
@@ -774,7 +786,7 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
         buyer_id=current_user.id,
         seller_id=seller.id,
         book_price=book.selling_price,
-        delivery_fee=delivery_fee,
+        delivery_fee=final_fee,
         total_amount=total_amount,
         status=OrderStatus.pending,
         delivery_method=delivery_method,
@@ -786,6 +798,17 @@ def purchase_book(book_id: str, delivery_method: DeliveryMethod = DeliveryMethod
     )
     book.status = BookStatus.reserved
     db.add(order)
+    db.commit(); db.refresh(order); db.refresh(book)
+    if delivery_method == DeliveryMethod.delivery:
+        task = DeliveryTask(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            pickup_location=pickup_location,
+            delivery_location=delivery_location,
+            delivery_fee=final_fee,
+            status=DeliveryTaskStatus.pending
+        )
+        db.add(task)
     db.commit(); db.refresh(order); db.refresh(book)
     return order
 
@@ -799,6 +822,9 @@ def delete_order(order_id: str, db: Session = Depends(get_db), current_user: Use
     book = db.query(Book).filter(Book.id == o.book_id).first()
     if book and book.status == BookStatus.reserved:
         book.status = BookStatus.available
+    delivery_task = db.query(DeliveryTask).filter(DeliveryTask.order_id == order_id).first()
+    if delivery_task:
+        db.delete(delivery_task)
     db.delete(o)
     db.commit()
     return {"deleted": True}
@@ -925,6 +951,10 @@ def pay_order(order_id: str, payload: PaymentConfirmPayload, db: Session = Depen
     order.status = OrderStatus.confirmed
     order.paid_at = datetime.datetime.utcnow()
     db.commit(); db.refresh(order)
+    book = db.query(Book).filter(Book.id == order.book_id).first()
+    if book:
+        book.status = BookStatus.sold
+        db.commit(); db.refresh(book)
     return order
 
 @app.post('/api/uploads/images')
@@ -1035,3 +1065,79 @@ def create_review(order_id: str, payload: ReviewCreate, db: Session = Depends(ge
 def list_book_reviews(book_id: str, db: Session = Depends(get_db)):
     reviews = db.query(Review).filter(Review.book_id == book_id).order_by(Review.created_at.desc()).all()
     return reviews
+
+class DeliveryRequestPayload(BaseModel):
+    pickup_location: str
+    delivery_location: str
+    delivery_fee: float
+    preferred_time: str | None = None
+
+@app.post('/api/orders/{order_id}/delivery_request', response_model=OrderOut)
+def request_delivery(order_id: str, payload: DeliveryRequestPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if order.buyer_id != current_user.id:
+        raise HTTPException(status_code=403, detail='仅买家可申请配送')
+    if order.status not in [OrderStatus.pending, OrderStatus.confirmed]:
+        raise HTTPException(status_code=400, detail='订单状态不支持配送安排')
+    if payload.delivery_fee < 0:
+        raise HTTPException(status_code=400, detail='配送费用不能为负数')
+    order.delivery_method = DeliveryMethod.delivery
+    order.pickup_location = payload.pickup_location.strip()
+    order.delivery_location = payload.delivery_location.strip()
+    try:
+        order.delivery_fee = float(payload.delivery_fee)
+    except ValueError:
+        raise HTTPException(status_code=400, detail='配送费用无效')
+    if payload.preferred_time:
+        try:
+            order.meetup_time = datetime.datetime.fromisoformat(payload.preferred_time.replace('Z','+00:00'))
+        except Exception:
+            raise HTTPException(status_code=400, detail='时间格式需为 ISO 8601 或 datetime-local')
+    order.total_amount = float(order.book_price) + float(order.delivery_fee or 0)
+    payment_window = datetime.datetime.utcnow() + datetime.timedelta(minutes=PAYMENT_WINDOW_MINUTES)
+    if not order.payment_due_at or order.payment_due_at < datetime.datetime.utcnow():
+        order.payment_due_at = payment_window
+    task = db.query(DeliveryTask).filter(DeliveryTask.order_id == order.id).first()
+    if not task:
+        task = DeliveryTask(
+            id=str(uuid.uuid4()),
+            order_id=order.id,
+            pickup_location=order.pickup_location,
+            delivery_location=order.delivery_location,
+            delivery_fee=order.delivery_fee,
+            status=DeliveryTaskStatus.pending
+        )
+        db.add(task)
+    else:
+        task.pickup_location = order.pickup_location
+        task.delivery_location = order.delivery_location
+        task.delivery_fee = order.delivery_fee
+        task.status = DeliveryTaskStatus.pending
+        task.courier_id = None
+    db.commit(); db.refresh(order)
+    return order
+
+@app.post('/api/orders/{order_id}/cancel', response_model=OrderOut)
+def cancel_order(order_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    if current_user.id not in (order.buyer_id, order.seller_id):
+        raise HTTPException(status_code=403, detail='无权取消该订单')
+    if order.status in [OrderStatus.completed, OrderStatus.cancelled]:
+        return order
+    order.status = OrderStatus.cancelled
+    order.payment_status = PaymentStatus.failed if order.payment_status == PaymentStatus.pending else order.payment_status
+    order.cancelled_at = datetime.datetime.utcnow()
+    book = db.query(Book).filter(Book.id == order.book_id).first()
+    if book and book.status in [BookStatus.reserved, BookStatus.off_shelf]:
+        book.status = BookStatus.available
+    task = db.query(DeliveryTask).filter(DeliveryTask.order_id == order.id).first()
+    if task:
+        task.status = DeliveryTaskStatus.cancelled
+        task.courier_id = None
+    db.commit(); db.refresh(order)
+    return order
+

@@ -18,6 +18,7 @@ export interface Order {
   meetup_time?: string | null;
   pickup_location?: string | null;
   delivery_location?: string | null;
+  delivery_request_time?: string | null;
   payment_method?: PaymentMethod;
   payment_status: PaymentStatus;
   payment_due_at?: string | null;

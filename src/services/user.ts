@@ -36,7 +36,7 @@ export async function fetchMyOrders() {
 }
 
 export async function deleteMyOrder(orderId: string) {
-  const { data } = await api.delete(`/orders/${orderId}`);
+  const { data } = await api.post<Order>(`/orders/${orderId}/cancel`);
   return data;
 }
 

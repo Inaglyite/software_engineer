@@ -21,4 +21,9 @@ export interface Book {
   condition?: 'excellent' | 'good' | 'fair' | 'poor';
   sellerId?: string;
   createdAt?: string;
+  category_name?: string;
+  subtitle?: string;
+  created_at?: string;
+  updated_at?: string;
+  updatedAt?: string;
 }

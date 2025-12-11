@@ -31,3 +31,15 @@ export async function fetchOrder(orderId: string) {
   const { data } = await api.get<Order>(`/orders/${orderId}`);
   return data;
 }
+
+export interface DeliveryRequestPayload {
+  pickup_location: string;
+  delivery_location: string;
+  delivery_fee: number;
+  preferred_time?: string;
+}
+
+export async function requestDelivery(orderId: string, payload: DeliveryRequestPayload) {
+  const { data } = await api.post<Order>(`/orders/${orderId}/delivery_request`, payload);
+  return data;
+}
