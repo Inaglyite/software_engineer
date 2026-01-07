@@ -25,5 +25,5 @@ class Courier(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     last_online_time = Column(TIMESTAMP)
 
     user = relationship('User', back_populates='courier_profile')
-    tasks = relationship('DeliveryTask', back_populates='courier')
+    # tasks关系已移除，因为delivery_tasks.courier_id不再使用外键
 

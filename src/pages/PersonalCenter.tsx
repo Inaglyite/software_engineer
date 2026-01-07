@@ -5,14 +5,16 @@ import type { UserProfile } from '../types/user';
 import type { Order } from '../types/order';
 import type { Book } from '../types/book';
 import { fetchProfile, updateProfile, changePassword, fetchMyOrders, fetchMySales, fetchMyBooks, deleteMyOrder, deleteMySale, deleteMyBook } from '../services/user';
+import { cancelOrder } from '../services/orders';
 import type { ColumnsType } from 'antd/es/table';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PageShell } from '../components/PageShell';
 import { palette, statusColorMap } from '../theme/design';
 
 const { Title, Text } = Typography;
 
 export default function PersonalCenter() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [sales, setSales] = useState<Order[]>([]);
@@ -122,6 +124,20 @@ export default function PersonalCenter() {
     }
   };
 
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      await cancelOrder(orderId);
+      message.success('订单已取消，书籍已重新上架');
+      loadOrders();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '取消订单失败');
+    }
+  };
+
+  const handleContinuePayment = (orderId: string) => {
+    navigate(`/payment/${orderId}`);
+  };
+
   const handleDeleteSale = async (orderId: string) => {
     try {
       await deleteMySale(orderId);
@@ -146,16 +162,38 @@ export default function PersonalCenter() {
     { title: '订单号', dataIndex: 'order_number', key: 'order_number' },
     { title: '书籍ID', dataIndex: 'book_id', key: 'book_id', render: (id: string) => <Link to={`/books/${id}`}>{id}</Link> },
     { title: '金额', dataIndex: 'total_amount', key: 'total_amount', render: (v: number) => `¥${v}` },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={statusColorMap[v] || 'default'}>{v}</Tag> },
+    { title: '支付状态', dataIndex: 'payment_status', key: 'payment_status', render: (v: string) => <Tag color={statusColorMap[v] || 'default'}>{v}</Tag> },
+    { title: '订单状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={statusColorMap[v] || 'default'}>{v}</Tag> },
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
     {
       title: '操作',
       key: 'actions',
-      render: (_, record) => (
-        <Popconfirm title="确定删除该订单吗？" onConfirm={() => handleDeleteOrder(record.id)}>
-          <Button danger size="small">删除</Button>
-        </Popconfirm>
-      ),
+      render: (_, record) => {
+        // 判断是否可以删除：订单已取消或已完成
+        const canDelete = record.status === 'cancelled' || record.status === 'completed';
+        // 判断是否可以继续付款或取消：订单待支付且未取消
+        const canPayOrCancel = record.status === 'pending' && record.payment_status === 'pending';
+
+        return (
+          <Space size="small">
+            {canPayOrCancel && (
+              <>
+                <Button type="primary" size="small" onClick={() => handleContinuePayment(record.id)}>
+                  继续付款
+                </Button>
+                <Popconfirm title="确定取消该订单吗？书籍将重新上架" onConfirm={() => handleCancelOrder(record.id)}>
+                  <Button danger size="small">取消订单</Button>
+                </Popconfirm>
+              </>
+            )}
+            {canDelete && (
+              <Popconfirm title="确定删除该订单吗？" onConfirm={() => handleDeleteOrder(record.id)}>
+                <Button danger size="small">删除</Button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -228,6 +266,20 @@ export default function PersonalCenter() {
       children: (
         <Card title="当前在售书籍" extra={<Button onClick={loadBooks} loading={loading.books}>刷新</Button>} style={{ borderRadius: 18 }}>
           {renderTable(books, bookColumns, loading.books, '暂无在售书籍')}
+        </Card>
+      ),
+    },
+    {
+      key: 'delivery',
+      label: '我的配送订单',
+      children: (
+        <Card title="我接的配送任务" style={{ borderRadius: 18 }}>
+          <Button type="primary" onClick={() => navigate('/my-delivery-tasks')}>
+            查看我的配送订单
+          </Button>
+          <p style={{ marginTop: 16, color: '#999' }}>
+            在这里可以查看您接的所有配送任务，上传取货和送达图片，以及管理配送状态。
+          </p>
         </Card>
       ),
     },

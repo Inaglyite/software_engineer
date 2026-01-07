@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 东华大学众包二手书交易平台 MVP 一键脚本
+# 东华大学众包二手书交易平台 一键脚本
 # 功能: 初始化数据库(如未存在) + 启动后端(uvicorn) + 启动前端(vite) + 停止/状态查看
 # 使用: ./scripts/run_mvp.sh start | stop | status | db-only | backend | frontend
 # 环境变量可覆盖: DB_USER DB_PASS DB_HOST DB_PORT DB_NAME PYTHON_BIN

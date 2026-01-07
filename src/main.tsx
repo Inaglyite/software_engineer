@@ -12,6 +12,7 @@ import Login from './pages/Login'
 import DeliveryTasks from './pages/DeliveryTasks'
 import PersonalCenter from './pages/PersonalCenter'
 import Payment from './pages/Payment'
+import MyDeliveryTasks from './pages/MyDeliveryTasks'
 
 const router = createBrowserRouter([
   {
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'delivery', element: <DeliveryTasks /> },
       { path: 'personal', element: <PersonalCenter /> },
       { path: 'payment/:orderId', element: <Payment /> },
+      { path: 'my-delivery-tasks', element: <MyDeliveryTasks /> },
       { path: '*', element: <NotFound /> },
     ],
   },

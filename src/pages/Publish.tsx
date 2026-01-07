@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Form, Input, InputNumber, Select, Button, message, Alert, Upload, Image, Space, Typography } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { createBook } from '../services/books';
+import { createBook, fetchCategories } from '../services/books';
+import type { BookCategory } from '../services/books';
 import { PageShell } from '../components/PageShell';
 import { palette } from '../theme/design';
 
@@ -20,6 +21,7 @@ interface PublishFormValues {
   selling_price: number;
   condition_level: 'excellent' | 'good' | 'fair' | 'poor';
   description?: string;
+  category_id: number;
 }
 
 export default function Publish() {
@@ -27,10 +29,23 @@ export default function Publish() {
   const [form] = Form.useForm();
   const sellerId = localStorage.getItem('user_id');
   const loggedIn = !!sellerId;
+  const [categories, setCategories] = useState<BookCategory[]>([]);
   // images state: { uid, name, base64 }
   const [images, setImages] = useState<{ uid: string; name: string; url: string }[]>([]);
   // index of selected cover image in images[], default 0
   const [coverIndex, setCoverIndex] = useState<number>(0);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await fetchCategories();
+        setCategories(data);
+      } catch (e) {
+        message.warning('加载分类失败，请稍后重试');
+      }
+    };
+    loadCategories();
+  }, []);
 
   const onFinish = async (values: PublishFormValues) => {
     if (!loggedIn) {
@@ -72,6 +87,7 @@ export default function Publish() {
         cover_image: cover,
         gallery_images: images.map(i => i.url),
         seller_id: sellerId!,
+        category_id: values.category_id,
       };
       console.debug('Publishing payload', payload);
       await createBook(payload);
@@ -190,6 +206,17 @@ export default function Publish() {
              rules={[{ required: true, message: '请选择品相' }]}
            >
              <Select options={conditionOptions} placeholder="选择品相" />
+           </Form.Item>
+           <Form.Item
+             name="category_id"
+             label="书籍分类"
+             rules={[{ required: true, message: '请选择书籍分类' }]}
+           >
+             <Select
+               placeholder="请选择分类"
+               options={categories.map((cat) => ({ label: cat.name, value: cat.id }))}
+               loading={categories.length === 0}
+             />
            </Form.Item>
            <Form.Item name="description" label="描述">
              <Input.TextArea rows={4} allowClear placeholder="补充书籍状况、是否有笔记等" />

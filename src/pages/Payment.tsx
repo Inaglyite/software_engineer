@@ -65,6 +65,17 @@ export default function Payment() {
 
   const handlePay = async () => {
     if (!order) return;
+
+    // 验证配送信息
+    if (arrangeDelivery && order.delivery_method !== 'delivery') {
+      message.warning('请先点击"保存配送需求"按钮保存配送信息');
+      return;
+    }
+    if (arrangeDelivery && (!order.pickup_location || !order.delivery_location)) {
+      message.warning('请先点击"保存配送需求"按钮保存配送信息');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const paid = await payOrder(order.id);
@@ -116,7 +127,9 @@ export default function Payment() {
         preferred_time: values.preferred_time ? values.preferred_time.toISOString() : undefined,
       });
       setOrder(updated);
-      message.success('已申请众包配送');
+      message.success('已申请众包配送，订单总额已更新为 ¥' + updated.total_amount);
+      // Reload to ensure all data is fresh
+      await load();
     } catch (e: any) {
       message.error(e?.response?.data?.detail ?? '申请配送失败');
     } finally {
@@ -211,38 +224,66 @@ export default function Payment() {
 
             <Card type="inner" title="配送选项" bordered={false} style={{ background: palette.background }}>
               <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <Checkbox checked={arrangeDelivery} onChange={(e) => setArrangeDelivery(e.target.checked)}>
+                <Checkbox
+                  checked={arrangeDelivery}
+                  onChange={(e) => setArrangeDelivery(e.target.checked)}
+                  disabled={order.delivery_method === 'delivery'}
+                >
                   申请众包配送（需要填写取送地点与配送费）
                 </Checkbox>
                 {arrangeDelivery && (
-                  <Form
-                    layout="vertical"
-                    form={deliveryForm}
-                    initialValues={{ delivery_fee: 5 }}
-                    onFinish={handleApplyDelivery}
-                  >
-                    <Form.Item label="取书地点" name="pickup_location" rules={[{ required: true, message: '请输入取书地点' }]}>
-                      <Input placeholder="如：宿舍楼下" />
-                    </Form.Item>
-                    <Form.Item label="送书地点" name="delivery_location" rules={[{ required: true, message: '请输入送书地点' }]}>
-                      <Input placeholder="如：XX教学楼" />
-                    </Form.Item>
-                    <Form.Item label="配送费用 (¥)" name="delivery_fee" rules={[{ required: true, message: '请输入配送费用' }]}>
-                      <InputNumber min={0} step={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item label="期望送达时间" name="preferred_time">
-                      <DatePicker showTime style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" loading={deliverySubmitting}>
-                      保存配送需求
-                    </Button>
-                  </Form>
+                  <>
+                    {order.delivery_method !== 'delivery' && (
+                      <Alert
+                        type="warning"
+                        message="请先保存配送需求，配送费将自动加入订单总额"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                      />
+                    )}
+                    <Form
+                      layout="vertical"
+                      form={deliveryForm}
+                      initialValues={{ delivery_fee: 5 }}
+                      onFinish={handleApplyDelivery}
+                    >
+                      <Form.Item label="取书地点" name="pickup_location" rules={[{ required: true, message: '请输入取书地点' }]}>
+                        <Input placeholder="如：宿舍楼下" />
+                      </Form.Item>
+                      <Form.Item label="送书地点" name="delivery_location" rules={[{ required: true, message: '请输入送书地点' }]}>
+                        <Input placeholder="如：XX教学楼" />
+                      </Form.Item>
+                      <Form.Item label="配送费用 (¥)" name="delivery_fee" rules={[{ required: true, message: '请输入配送费用' }]}>
+                        <InputNumber min={0} step={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="期望送达时间" name="preferred_time">
+                        <DatePicker showTime style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Button type="primary" htmlType="submit" loading={deliverySubmitting}>
+                        保存配送需求
+                      </Button>
+                    </Form>
+                  </>
                 )}
-                <Descriptions column={1} bordered size="small">
-                  <Descriptions.Item label="书籍价格">¥{order.book_price}</Descriptions.Item>
-                  <Descriptions.Item label="配送费用">¥{order.delivery_fee ?? 0}</Descriptions.Item>
-                  <Descriptions.Item label="总金额">¥{order.total_amount}</Descriptions.Item>
-                </Descriptions>
+                <Card
+                  type="inner"
+                  title={<span style={{ fontWeight: 'bold', fontSize: 16 }}>费用明细</span>}
+                  style={{ background: '#fafafa', border: '2px solid #1890ff' }}
+                >
+                  <Descriptions column={1} bordered size="small">
+                    <Descriptions.Item label="书籍价格">¥{order.book_price}</Descriptions.Item>
+                    <Descriptions.Item label="配送费用">
+                      <span style={{ color: order.delivery_fee > 0 ? '#52c41a' : 'inherit' }}>
+                        ¥{order.delivery_fee ?? 0}
+                      </span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="总金额">
+                      <span style={{ fontWeight: 'bold', fontSize: 18, color: '#ff4d4f' }}>
+                        ¥{order.total_amount}
+                      </span>
+                    </Descriptions.Item>
+                  </Descriptions>
+                </Card>
               </Space>
             </Card>
 

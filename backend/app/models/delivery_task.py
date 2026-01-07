@@ -14,9 +14,8 @@ class DeliveryTaskStatus(enum.Enum):
 
 class DeliveryTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = 'delivery_tasks'
-    id = Column(String(36), primary_key=True)
     order_id = Column(String(36), ForeignKey('orders.id', ondelete='CASCADE'), nullable=False)
-    courier_id = Column(String(36), ForeignKey('couriers.id'))
+    courier_id = Column(String(36))  # 配送员用户ID，不使用外键约束
     pickup_location = Column(String(200), nullable=False)
     delivery_location = Column(String(200), nullable=False)
     delivery_fee = Column(DECIMAL(10,2), nullable=False, default=0)
@@ -30,4 +29,4 @@ class DeliveryTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     delivered_at = Column(TIMESTAMP)
 
     order = relationship('Order', back_populates='delivery_task')
-    courier = relationship('Courier', back_populates='tasks')
+    # 移除courier关系，因为不再使用外键

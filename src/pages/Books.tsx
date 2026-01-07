@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchBooks } from '../services/books';
-import type { Book } from '../types/book';
+import { fetchBooks, fetchCategories } from '../services/books';
+import type { Book, BookCategory } from '../types/book';
 import {
   Card,
   Tag,
@@ -23,14 +23,16 @@ const { Title, Text } = Typography;
 
 export default function Books() {
   const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<BookCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<number | null>(null);
 
-  const load = async () => {
+  const load = async (categoryId = activeCategory) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchBooks();
+      const data = await fetchBooks({ categoryId: categoryId ?? undefined });
       setBooks(data);
     } catch (e: unknown) {
       let msg = '加载失败';
@@ -47,9 +49,18 @@ export default function Books() {
 
   useEffect(() => {
     load();
-    const onFocus = () => load();
+    const initCategories = async () => {
+      try {
+        const list = await fetchCategories();
+        setCategories(list);
+      } catch (e) {
+        console.warn('加载分类失败', e);
+      }
+    };
+    initCategories();
+    const onFocus = () => load(activeCategory);
     window.addEventListener('focus', onFocus);
-    const interval = setInterval(load, 15000);
+    const interval = setInterval(() => load(activeCategory), 15000);
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(interval);
@@ -66,7 +77,7 @@ export default function Books() {
               书籍列表
             </Title>
           </div>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>
             刷新
           </Button>
         </Space>
@@ -77,12 +88,40 @@ export default function Books() {
             title="加载失败"
             subTitle={error}
             extra={
-              <Button type="primary" onClick={load}>
+              <Button type="primary" onClick={() => load()}>
                 重试
               </Button>
             }
           />
         )}
+
+        <Card bordered={false} style={{ borderRadius: 18 }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space align="center" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <Text style={{ color: palette.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Categories</Text>
+                <Title level={4} style={{ margin: 0, color: palette.text }}>书籍分类</Title>
+              </div>
+              <Space wrap>
+                <Button type={!activeCategory ? 'primary' : 'default'} onClick={() => { setActiveCategory(null); load(null); }}>
+                  全部
+                </Button>
+                {categories.map((cat) => (
+                  <Button
+                    key={cat.id}
+                    type={activeCategory === cat.id ? 'primary' : 'default'}
+                    onClick={() => {
+                      setActiveCategory(cat.id);
+                      load(cat.id);
+                    }}
+                  >
+                    {cat.name}
+                  </Button>
+                ))}
+              </Space>
+            </Space>
+          </Space>
+        </Card>
 
         {loading && books.length === 0 ? (
           <Row gutter={[16, 16]}>
@@ -144,6 +183,7 @@ export default function Books() {
                             {b.title}
                           </Title>
                           <Text type="secondary">作者：{b.author || '未知'}</Text>
+                          {b.category_name && <Tag color="blue">{b.category_name}</Tag>}
                           <Text>价格：¥{price ?? '--'}</Text>
                           <Space size={[8, 8]} wrap>
                             {cond && (

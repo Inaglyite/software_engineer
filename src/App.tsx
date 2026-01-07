@@ -13,7 +13,7 @@ function App() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchBooks(q)
+      const data = await fetchBooks({ q })
       setBooks(data)
     } catch (e: any) {
       setError(e?.message ?? 'Load failed')

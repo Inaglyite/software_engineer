@@ -6,6 +6,7 @@ export interface Book {
   publisher?: string;
   publish_year?: number;
   edition?: string;
+  category_id?: number | null;
   original_price: number; // backend snake_case
   selling_price: number; // backend snake_case
   condition_level: 'excellent' | 'good' | 'fair' | 'poor';
@@ -26,4 +27,13 @@ export interface Book {
   created_at?: string;
   updated_at?: string;
   updatedAt?: string;
+}
+
+export interface BookCategory {
+  id: number;
+  name: string;
+  description?: string | null;
+  parent_id?: number | null;
+  sort_order?: number;
+  is_active?: boolean;
 }

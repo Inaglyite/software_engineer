@@ -4,11 +4,11 @@ from sqlalchemy.orm import relationship
 from ..database import Base
 from .mixins import TimestampMixin
 
-class BookCategory(Base, TimestampMixin):
+class BookCategory(Base):
     __tablename__ = 'book_categories'
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False)
-    description = Column(Text)  # TEXT
+    description = Column(Text)
     parent_id = Column(Integer, ForeignKey('book_categories.id'))
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)

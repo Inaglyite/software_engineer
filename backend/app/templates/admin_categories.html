@@ -1,0 +1,45 @@
+{% extends 'admin_base.html' %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+  <h3 style="margin:0;">书籍分类编辑</h3>
+  <a href="/admin"><button type="button">返回书籍列表</button></a>
+</div>
+<form method="post" action="/admin/book_categories/create" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+  <input name="name" placeholder="分类名称" required style="width:160px;" />
+  <input name="description" placeholder="描述(可选)" style="width:200px;" />
+  <input name="sort_order" type="number" placeholder="排序" style="width:90px;" />
+  <label style="font-size:12px; display:flex; align-items:center; gap:4px;"><input type="checkbox" name="is_active" checked />启用</label>
+  <button type="submit">添加分类</button>
+</form>
+<table>
+  <thead>
+    <tr><th>ID</th><th>名称</th><th>描述</th><th>排序</th><th>启用</th><th>关联书籍</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+    {% for c in categories %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/book_categories/{{ c.id }}/update" style="display:flex; gap:6px; align-items:center;">
+          <input name="name" value="{{ c.name }}" style="width:140px;" />
+          <input name="description" value="{{ c.description or '' }}" style="width:200px;" />
+          <input name="sort_order" type="number" value="{{ c.sort_order }}" style="width:80px;" />
+          <label style="font-size:12px; display:flex; align-items:center; gap:4px;"><input type="checkbox" name="is_active" {% if c.is_active %}checked{% endif %} />启用</label>
+          <button type="submit">保存</button>
+        </form>
+      </td>
+      <td>{{ c.description or '' }}</td>
+      <td>{{ c.sort_order }}</td>
+      <td>{{ '是' if c.is_active else '否' }}</td>
+      <td>{{ counts.get(c.id, 0) }}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/book_categories/{{ c.id }}/delete" onsubmit="return confirm('确认删除该分类?');">
+          <button type="submit" class="danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

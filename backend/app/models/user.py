@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, TIMESTAMP
+from sqlalchemy import Column, String, Integer, Boolean, TIMESTAMP, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -6,6 +6,11 @@ from .mixins import UUIDPrimaryKeyMixin, TimestampMixin
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = 'users'
+    __table_args__ = (
+        Index('idx_student_id', 'student_id'),
+        Index('idx_phone', 'phone'),
+        Index('idx_credit_score', 'credit_score'),
+    )
     student_id = Column(String(20), unique=True, nullable=False)
     name = Column(String(50), nullable=False)
     email = Column(String(100), unique=True)

@@ -1,0 +1,47 @@
+{% extends 'admin_base.html' %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+  <h3 style="margin:0;">配送订单列表</h3>
+</div>
+<hr />
+<table>
+  <thead>
+    <tr>
+      <th>订单ID</th>
+      <th>取书地点</th>
+      <th>送书地点</th>
+      <th>配送费</th>
+      <th>配送员ID</th>
+      <th>状态</th>
+      <th>创建时间</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.order_id[:8] }}...</td>
+      <td>{{ task.pickup_location }}</td>
+      <td>{{ task.delivery_location }}</td>
+      <td>¥{{ task.delivery_fee }}</td>
+      <td>{{ task.courier_id[:8] if task.courier_id else '未接单' }}</td>
+      <td>
+        <span class="status-label status-{{ task.status.value }}">
+          {{ task.status.value }}
+        </span>
+      </td>
+      <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else 'N/A' }}</td>
+      <td class="actions">
+        <form class="inline" method="POST" action="/admin/delivery-tasks/{{ task.id }}/cancel" onsubmit="return confirm('确定取消该配送订单吗？');">
+          <button class="danger" type="submit">取消配送</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if not tasks %}
+<p style="text-align: center; color: #999; padding: 40px;">暂无配送订单</p>
+{% endif %}
+{% endblock %}
+
